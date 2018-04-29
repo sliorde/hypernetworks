@@ -1,0 +1,218 @@
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.client import device_lib
+import logging
+import os
+
+def GetWeightVariable(shape, name, scale=1.0):
+    return tf.get_variable(shape=shape, initializer=tf.variance_scaling_initializer(scale=scale),name=name)
+
+def GetBiasVariable(shape, name, scale=1.0):
+    return tf.get_variable(shape=shape, initializer=tf.constant_initializer(0.0),trainable=False,name=name)
+
+def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=None,train_batch_norm=True,activation_on_last_layer=False,is_training=None,scale=1.0,batchnorm_decay=0.98,activation=tf.nn.relu,name=None,zero_fixer=1e-8):
+    """
+    Creates a multilayer perceptron (=MLP)
+    :param input: input layer to perceptron
+    :param widths: a list with the widths (=number of neurons) in each layer
+    :param with_batch_norm: should perfrom batch normalization?
+    :param where_to_batch_norm: (optional) a list with boolean values, one value for each layer. This determines whether to perform batch normalization in this layer.
+    :param train_batch_norm: (optional) whether to train the batch normalization's offsets and scales, or just use constant values
+    :param activation_on_last_layer: if boolean - whether to add activation on the last layer of the MLP. Otherwise, can be an actual activation function for the last layer
+    :param is_training: tf boolean variable which determines whether currently the graph is in training phase. This determines which batch normalization value to use.
+    :param scale: the variance of the initial values of the variables will be proportional to this
+    :param batchnorm_decay:  exponential decay constant for batch normalization
+    :param activation:
+    :return: three lists: 1) layers: a list of tuples (w,b) where each tuple is the weights and biases for a layer. 2) layer_outputs: a list of tensors, each tensor is the output of a layer. 3) batch_norm_params: a list of tuples (means,variances,offsets,scales), the former two are tensors, the latter two are variables
+    """
+    inds = np.nonzero(widths)[0]
+    widths = [widths[ind] for ind in inds]
+    layers = []
+    layer_outputs = [input,]
+    widths = [int(input.shape[-1])]+widths
+    if with_batch_norm and is_training is not None:
+        if where_to_batch_norm is None:
+            where_to_batch_norm = [False] + [True]*(len(widths)-1)
+            if activation_on_last_layer is False:
+                where_to_batch_norm[-1] = False
+        else:
+            where_to_batch_norm = [where_to_batch_norm[ind] for ind in inds]
+        batch_norm_params = []
+    else:
+        batch_norm_params = None
+        where_to_batch_norm = [False]*len(widths)
+    for i in range(1,len(widths)):
+        w = GetWeightVariable([widths[i - 1], widths[i]], GiveName(name,'layer{:d}_weights'.format(i)), scale)
+        if where_to_batch_norm[i]:
+            b = tf.zeros([widths[i]],name=GiveName(name,'layer{:d}_biases'.format(i)))
+        else:
+            b = GetBiasVariable([widths[i]], GiveName(name,'layer{:d}_biases'.format(i)), scale)
+        layers.append((w, b))
+        pre_activations = tf.add(tf.tensordot(layer_outputs[i - 1], w, [[-1], [-2]]), b, GiveName(name,'layer{:d}_pre_activations'.format(i)))
+        if i<(len(widths)-1):
+            layer_output = activation(pre_activations, GiveName(name,'layer{:d}_activations'.format(i)))
+        else:
+            if activation_on_last_layer is False:
+                layer_output = pre_activations
+            elif activation_on_last_layer is True:
+                layer_output = activation(pre_activations,GiveName(name,'layer{:d}_activations'.format(i)))
+            else:
+                layer_output = activation_on_last_layer(pre_activations, GiveName(name,'layer{:d}_activations'.format(i)))
+        if where_to_batch_norm[i]:
+            layer_output,params = AddBacthNormalizationOps(layer_output,is_training,train_batch_norm,batchnorm_decay,zero_fixer,GiveName(name,'layer{:d}_batchnorm'.format(i)))
+            batch_norm_params.append(params)
+        layer_outputs.append(layer_output)
+    layer_outputs = layer_outputs[1:]
+    return layer_outputs,layers,batch_norm_params
+
+def AddBacthNormalizationOps(input, is_training, train_BN_params, batchnorm_decay, zero_fixer=1e-8, name=None):
+    """
+    :param input: input layer
+    :param is_training: a bool or a tf boolean tensor which determines whether currently the graph is in training phase. This determines whether to use batch or aggregated mean and std
+    :param train_BN_params: whether to train the batch normalization's offsets and scales, or just use constant values
+    :param batchnorm_decay:  exponential decay constant for batch normalization
+    :param name:
+    :return: the tensor after the batch normalization operation
+    """
+    batch_means, batch_variances = tf.nn.moments(input, list(np.arange(0, len(input.shape) - 1)),keep_dims=False)
+    offsets = tf.get_variable(name=GiveName(name,'_offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
+    scales = tf.get_variable(name=GiveName(name,'_scales'), shape=batch_variances.shape,initializer=tf.ones_initializer(),trainable=train_BN_params)
+    ema = tf.train.ExponentialMovingAverage(decay=batchnorm_decay, name=GiveName(name, '_ema'))
+    ema_ops = ema.apply([batch_means,batch_variances])
+    def ApplyEmaUpdate():
+        with tf.control_dependencies([ema_ops]):
+            return tf.identity(batch_means), tf.identity(batch_variances)
+    if isinstance(is_training,bool):
+        if is_training:
+            means, variances = ApplyEmaUpdate()
+        else:
+            means, variances = ema.average(batch_means), ema.average(batch_variances)
+    else: # in this case, is_training is a tf.Tensor of type tf.bool
+        means, variances = tf.cond(is_training, lambda: ApplyEmaUpdate(),lambda: (ema.average(batch_means), ema.average(batch_variances)))
+    return tf.nn.batch_normalization(input, means, variances, offsets, scales,zero_fixer,name), (means,variances,offsets,scales)
+
+def GiveName(name:str,more_info:str):
+    if name is None:
+        return None
+    else:
+        return name+more_info
+
+
+def MaxPool(x,size,stride,order='NHWC'):
+    if order=='NHWC':
+        size = [1,size,size,1]
+        stride = [1,stride,stride,1]
+    else:
+        size = [1, 1, size, size]
+        stride = [1, 1, stride, stride]
+    return tf.nn.max_pool(x,size,stride,'SAME',order)
+
+def Conv2D(x,w,stride,order):
+    if order=='NHWC':
+        stride = [1,stride,stride,1]
+    else:
+        stride = [1, 1, stride, stride]
+    return tf.nn.conv2d(x, w, stride, 'SAME', data_format=order)
+
+def ConvType1(x, w, stride, order):
+    # batch_size = tf.shape(w)[0]
+    # w_sz = [batch_size] + w.shape.as_list()[1:]  # [batch,width,height,channels,filters]
+    # w = tf.transpose(w, [1, 2, 0, 3, 4])  # [width,height,batch,channels,filters]
+    # w = tf.reshape(w, [w_sz[1], w_sz[2], w_sz[0] * w_sz[3], w_sz[4]])  # [width,height,batch*channels,filters]
+    # if order == 'NHWC':
+    #     x_sz = [batch_size]+x.shape.as_list()[1:]  # [batch,width,height,channels]
+    #     x = tf.transpose(x, [1, 2, 0, 3])  # [width,height,batch,channels]
+    #     x = tf.reshape(x, [1, x_sz[1], x_sz[2], x_sz[0] * x_sz[3]])  # [1,width,height,batch*channels]
+    #     x = tf.nn.depthwise_conv2d(x, w, strides=[1, stride, stride, 1],padding='SAME')  # [1,width/stride,height/stride,batch*channels*filters]
+    #     x = tf.reshape(x, [x_sz[1]//stride, x_sz[2]//stride, x_sz[0], x_sz[3], w_sz[4]])  # [width/stride,height/stride,batch,channels,filters]
+    #     x = tf.transpose(x, [2, 0, 1, 3, 4])  # [batch,width,height,channels,filters]
+    #     x = tf.reduce_sum(x, axis=3)  # [batch,width,height,filters]
+    # else:  # NHCW
+    #     x_sz = [batch_size] + x.shape.as_list()[1:]  # [batch,channels,width,height]
+    #     x = tf.reshape(x, [1, x_sz[0] * x_sz[1], x_sz[2], x_sz[3]])  # [1,batch*channels,width,height]
+    #     x = tf.nn.depthwise_conv2d(x, w, strides=[1, 1, stride, stride],padding='SAME')  # [1,batch*channels*filters,width/stride,height/stride]
+    #     x = tf.reshape(x, [x_sz[0], x_sz[1], w_sz[4], x_sz[2]//stride, x_sz[3]//stride])  # [batch,channels,filters,width/stride,height/stride]
+    #     x = tf.reduce_sum(x, axis=1)  # [batch,filters,width,height]
+    # return x
+    return tf.squeeze(tf.map_fn(lambda u: Conv2D(tf.expand_dims(u[0],0), u[1], stride, order),elems=[x, w], dtype=tf.float32),1)
+
+def ConvType2(x, w, stride, order):
+    return tf.map_fn(lambda u: Conv2D(u[0],u[1],stride,order), elems=[x, w],dtype=tf.float32)
+
+def ConvType4(x, w, stride, order):
+    return Conv2D(x, w, stride,order)
+
+def ConvBN(x, w, stride, s, o, order, batch_type='BATCH_TYPE1',name=None):
+    if batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
+        s = tf.expand_dims(s,1)
+        o = tf.expand_dims(o, 1)
+
+    conv_func = [ConvType1,ConvType2,ConvType2,ConvType4]
+    batch_type = ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4'].index(batch_type)
+    conv_func = conv_func[batch_type]
+
+
+
+    return tf.identity(conv_func(x, w, stride, order) * s + o, name)
+
+def OptimizerReset(optimizer, graph=None, name=None):
+    """
+    reset all internal variables (=slots) of optimizer. It is important to do this  when doing a manual sharp change
+    :param name:
+    :return:
+    """
+    if graph is None:
+        graph = tf.get_default_graph()
+    slots = [optimizer.get_slot(var, name) for name in optimizer.get_slot_names() for var in graph.get_collection('variables')]
+    slots = [slot for slot in slots if slot is not None]
+    if isinstance(optimizer, tf.train.AdamOptimizer):
+        slots.extend(optimizer._get_beta_accumulators())
+    return tf.variables_initializer(slots, name=name)
+
+def GetLogger(initialize_from_checkpoint=False,checkpoint_file_name=None):
+    if initialize_from_checkpoint:
+        log_file_mode = 'a'
+    else:
+        log_file_mode = 'w'
+        if not os.path.exists(os.path.dirname(checkpoint_file_name)):
+            os.makedirs(os.path.dirname(checkpoint_file_name))
+    log_format = logging.Formatter("%(asctime)s : %(message)s")
+    logger = logging.getLogger()
+    dir_name = os.path.dirname(checkpoint_file_name)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    file_name = dir_name+'/log.txt'
+    file_handler = logging.FileHandler(file_name, mode=log_file_mode)
+    file_handler.setFormatter(log_format)
+    logger.addHandler(file_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_format)
+    logger.addHandler(console_handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+def GetDevices():
+    local_device_protos = device_lib.list_local_devices()
+    gpus = [x.name for x in local_device_protos if x.device_type == 'GPU']
+    cpu = [x.name for x in local_device_protos if x.device_type == 'CPU'][0]
+    devices = {'cpu':cpu, 'gpus':gpus}
+    return devices
+
+
+"""
+1) BATCH_TYPE1: many images, many weights: 1-1
+x[bs,...] 
+w[bs,...]
+ 
+2) BATCH_TYPE2: many images, many weights: each weight gets different batch of images 
+x[nbs,ibs,...]
+w[nbs,...]
+
+3) BATCH_TYPE3: many images, many weights: all images per each weight
+x[ibs,...]
+w[nbs,...]
+
+4) BATCH_TYPE4: many images, one weight
+x[ibs,...]
+w[...]
+"""

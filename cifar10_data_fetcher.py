@@ -1,0 +1,137 @@
+import tensorflow as tf
+from math import ceil
+from glob import glob
+import pickle
+import tarfile
+import random
+import os
+from params import Cifar10Params
+
+def Cifar10ConvertToTFRecords(image_params:Cifar10Params):
+    data_dir = image_params.path
+    tarfile.open(os.path.join(data_dir, 'cifar-10-python.tar.gz'),'r:gz').extractall(data_dir)
+    file_names = {}
+    file_names['train'] = ['data_batch_{:d}'.format(i) for i in range(1, 5)]
+    file_names['validation'] = ['data_batch_5']
+    file_names['test'] = ['test_batch']
+    input_dir = os.path.join(data_dir, 'cifar-10-batches-py')
+    for mode, files in file_names.items():
+        input_files = [os.path.join(input_dir, f) for f in files]
+        output_file = os.path.join(data_dir, mode + '.tfrecords')
+        try:
+            os.remove(output_file)
+        except OSError:
+            pass
+        with tf.python_io.TFRecordWriter(output_file) as record_writer:
+            for input_file in input_files:
+                with tf.gfile.Open(input_file, 'rb') as f:
+                    data_dict = pickle.load(f,encoding='latin1')
+                data = data_dict['data']
+                labels = data_dict['labels']
+                num_entries_in_batch = len(labels)
+                for i in range(num_entries_in_batch):
+                    example = tf.train.Example(features=tf.train.Features(
+                        feature={
+                            'image': tf.train.Feature(bytes_list=tf.train.BytesList(value=[data[i].tobytes()])),
+                            'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[labels[i]]))
+                        }))
+                    record_writer.write(example.SerializeToString())
+
+class Cifar10DataFetcher():
+    def __init__(self, mode: str, params:Cifar10Params=Cifar10Params(), batch_size: int = None, noise_batch_size:int = None, offline: bool = False,order='NCHW'):
+        if mode.upper() in ['TRAIN','TRAINING']:
+            path = os.path.join(params.path,'train.tfrecords')
+            is_training = True
+        elif mode.uppper() in ['VALIDATE', 'VALIDATION', 'VALIDATING']:
+            path = os.path.join(params.path, 'validation.tfrecords')
+            is_training = False
+        elif mode.upper() in ['EVALUATE', 'EVAL', 'EVALUATION', 'EVALUATING', 'TEST', 'TESTING']:
+            path = os.path.join(params.path, 'test.tfrecords')
+            is_training = False
+        else:
+            raise ValueError('wrong value for `mode`')
+        if offline:
+            self._graph = tf.Graph()
+            self._sess = tf.Session(graph=self._graph)
+        else:
+            self._graph = tf.get_default_graph()
+        self._offline = offline
+
+        if os.path.isdir(path):
+            file_names = glob(path + "/**/*", recursive=True)
+            if is_training:
+                random.shuffle(file_names)
+        else:
+            file_names = [path]
+
+        with self._graph.as_default():
+            # record_bytes = params.image_size*params.image_size*params.number_of_channels+ceil(params.num_classes/256)
+            # dataset = tf.data.FixedLengthRecordDataset(file_names,record_bytes)
+            dataset = tf.data.TFRecordDataset(file_names)
+
+            if is_training:
+                dataset = dataset.repeat()
+
+            def preprocess_image(image, is_training):
+                ##TODO: make sure this works for NCHW as well
+                if is_training:
+                    image = tf.image.resize_image_with_crop_or_pad(image, params.image_size + 8, params.image_size+ 8)
+                    image = tf.random_crop(image, [params.image_size, params.image_size, params.number_of_channels])
+                    image = tf.image.random_flip_left_right(image)
+                return tf.image.per_image_standardization(image)
+
+            def parse_record(raw_record, is_training):
+                features = tf.parse_single_example(raw_record,features={
+                        'image': tf.FixedLenFeature([], tf.string),
+                        'label': tf.FixedLenFeature([], tf.int64),
+                    })
+                image = tf.decode_raw(features['image'], tf.uint8)
+                image = tf.reshape(image, [params.number_of_channels,params.image_size,params.image_size])
+                if order=='NHWC':
+                    image = tf.transpose(image, [1, 2, 0])
+                image = tf.cast(image,tf.float32)
+                image = preprocess_image(image, is_training)
+
+                label = tf.one_hot(tf.cast(features['label'], tf.int32),params.num_classes)
+                return image, label
+
+            dataset = dataset.map(lambda value: parse_record(value, is_training))
+
+            if (batch_size is None):
+                batch_size = 1
+
+            if is_training:
+                dataset = dataset.shuffle(int(params.training_set_size*0.4+3*batch_size))
+
+            if noise_batch_size is None:
+                total_batch_size = batch_size
+            else:
+                total_batch_size = batch_size*noise_batch_size
+
+            # TODO: on validation_set or test_set, we should not drop remainder
+            dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(total_batch_size))
+
+            if noise_batch_size is not None:
+                def reshape(images, labels):
+                    images = tf.reshape(images, [noise_batch_size, batch_size, params.image_size, params.image_size,
+                                                 params.number_of_channels])
+                    labels = tf.reshape(labels, [noise_batch_size, batch_size, params.num_classes])
+                    return images, labels
+                dataset = dataset.map(lambda images,labels: reshape(images,labels))
+            self._next = dataset.make_one_shot_iterator().get_next()
+            self.image, self.label = self._next
+
+    def GetNext(self, sess: tf.Session = None):
+        if self._offline:
+            raise RuntimeError('this fetcher is offline. use `GetNextOffline`')
+        if sess is None:
+            sess = tf.get_default_session()
+
+        image, label = sess.run(self._next)
+        return image, label
+
+    def GetNextOffline(self):
+        if not self._offline:
+            raise RuntimeError('this fetcher is not offline. use `GetNext`')
+        image, label = self._sess.run(self._next)
+        return image, label
