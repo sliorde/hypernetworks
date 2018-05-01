@@ -45,9 +45,9 @@ class Cifar10Params(DataParams):
 
 class ResNetHyperParameters():
     def __init__(self):
-        self.layer1_filter_size = None
-        self.layer1_size = None
-        self.layer1_pool_size = None
+        self.first_layer_filter_size = None
+        self.first_layer_size = None
+        self.first_layer_pool_size = None
         self.filter_size = None
         self.stride_between_scales = None
         self.layers_per_block = None
@@ -58,9 +58,9 @@ class ResNetHyperParameters():
 
 class ResNetImageNetHyperParameters(ResNetHyperParameters):
     def __init__(self):
-        self.layer1_filter_size = 7
-        self.layer1_size = 64
-        self.layer1_pool_size = 3
+        self.first_layer_filter_size = 7
+        self.first_layer_size = 64
+        self.first_layer_pool_size = 3
         self.filter_size = 3
         self.stride_between_scales = 2
         self.layers_per_block = 2
@@ -71,9 +71,9 @@ class ResNetImageNetHyperParameters(ResNetHyperParameters):
 
 class ResNetCifar10HyperParameters(ResNetHyperParameters):
     def __init__(self):
-        self.layer1_filter_size = 3
-        self.layer1_size = 16
-        self.layer1_pool_size = 3
+        self.first_layer_filter_size = 3
+        self.first_layer_size = 16
+        self.first_layer_pool_size = 3
         self.filter_size = 3
         self.stride_between_scales = 2
         self.layers_per_block = 2

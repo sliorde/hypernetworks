@@ -8,6 +8,9 @@ import os
 from params import Cifar10Params
 
 def Cifar10ConvertToTFRecords(image_params:Cifar10Params):
+    """
+    this function should be run only once, to convert the Cifar10 tar.gz file from https://www.cs.toronto.edu/~kriz/cifar.html to tfrecord files
+    """
     data_dir = image_params.path
     tarfile.open(os.path.join(data_dir, 'cifar-10-python.tar.gz'),'r:gz').extractall(data_dir)
     file_names = {}
@@ -38,7 +41,22 @@ def Cifar10ConvertToTFRecords(image_params:Cifar10Params):
                     record_writer.write(example.SerializeToString())
 
 class Cifar10DataFetcher():
-    def __init__(self, mode: str, params:Cifar10Params=Cifar10Params(), batch_size: int = None, noise_batch_size:int = None, offline: bool = False,order='NCHW'):
+    """
+    a wrapper for a tf.data.Dataset object that can feed Cifar10 images.
+    An instance will have the properties `image` and `labels` which are the tensors for a batch of (normalized) images and one-hot labels.
+    """
+    def __init__(self, mode: str, params:Cifar10Params=Cifar10Params(), batch_size: int = None, noise_batch_size:int = None,order='NCHW'):
+        """
+
+        Args:
+            mode: can be either `'TRAIN'`,`'VALIDATION'`,`'TEST'`. controls which data set to use.
+            params: a `Cifar10Params` object containing parameters of the images
+            batch_size: number of images per batch
+            noise_batch_size: if `None`, the batch will be a four dimensional tensor, whose first dimension is the batch dimension with size `batch_size`. otherwise, the batch will be a five dimensional ternsor, whose first dimension is the noise batch dimension, with size `noise_batch_size`, and the second dimension is the image batch dimension, with size `batch_size`.
+            order: either `'NCHW'` or `'NHWC'`. (currently only `'NHWC'` is supported for image augmentation preprocessing)
+        """
+
+        # choose correct path for images, between training, validation and test
         if mode.upper() in ['TRAIN','TRAINING']:
             path = os.path.join(params.path,'train.tfrecords')
             is_training = True
@@ -50,13 +68,10 @@ class Cifar10DataFetcher():
             is_training = False
         else:
             raise ValueError('wrong value for `mode`')
-        if offline:
-            self._graph = tf.Graph()
-            self._sess = tf.Session(graph=self._graph)
-        else:
-            self._graph = tf.get_default_graph()
-        self._offline = offline
 
+        self._graph = tf.get_default_graph()
+
+        # get list of filenames of tfrecords
         if os.path.isdir(path):
             file_names = glob(path + "/**/*", recursive=True)
             if is_training:
@@ -65,15 +80,13 @@ class Cifar10DataFetcher():
             file_names = [path]
 
         with self._graph.as_default():
-            # record_bytes = params.image_size*params.image_size*params.number_of_channels+ceil(params.num_classes/256)
-            # dataset = tf.data.FixedLengthRecordDataset(file_names,record_bytes)
             dataset = tf.data.TFRecordDataset(file_names)
 
             if is_training:
                 dataset = dataset.repeat()
 
             def preprocess_image(image, is_training):
-                ##TODO: make sure this works for NCHW as well
+                ##TODO: make this work for NCHW as well
                 if is_training:
                     image = tf.image.resize_image_with_crop_or_pad(image, params.image_size + 8, params.image_size+ 8)
                     image = tf.random_crop(image, [params.image_size, params.image_size, params.number_of_channels])
@@ -101,6 +114,7 @@ class Cifar10DataFetcher():
                 batch_size = 1
 
             if is_training:
+                # TODO: I just took this formula from somewhere, it should be empirical justified...
                 dataset = dataset.shuffle(int(params.training_set_size*0.4+3*batch_size))
 
             if noise_batch_size is None:
@@ -108,7 +122,7 @@ class Cifar10DataFetcher():
             else:
                 total_batch_size = batch_size*noise_batch_size
 
-            # TODO: on validation_set or test_set, we should not drop remainder
+            # TODO: on validation_set or test_set, we should not drop remainder!
             dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(total_batch_size))
 
             if noise_batch_size is not None:
@@ -122,16 +136,17 @@ class Cifar10DataFetcher():
             self.image, self.label = self._next
 
     def GetNext(self, sess: tf.Session = None):
-        if self._offline:
-            raise RuntimeError('this fetcher is offline. use `GetNextOffline`')
+        """
+        get next batch of images and labels
+        Args:
+            sess: a tf.Session
+
+        Returns:
+            images, labels
+
+        """
         if sess is None:
             sess = tf.get_default_session()
 
         image, label = sess.run(self._next)
-        return image, label
-
-    def GetNextOffline(self):
-        if not self._offline:
-            raise RuntimeError('this fetcher is not offline. use `GetNext`')
-        image, label = self._sess.run(self._next)
         return image, label

@@ -5,9 +5,21 @@ from utils import ConvBN,MaxPool
 from logging import Logger
 
 class ResnetWeights():
+    """
+    This class holds all the trainable weights for a resnet networks, in a nested structure.
+    for example, if `resnet_weights` is an instance of this class, you can use `resnet_weights.first_layer.w`, `resnet_weights.first_layer.bn_offset`, `resnet_weights.scales[2].blocks[0].conv_layers[2].w`, `resnet_weights.scales[2].blocks[0].projection.bn_scale`,`resnet_weights.final_layer.b` and so on
+    """
     def __init__(self, hparams:ResNetHyperParameters, image_params:DataParams):
         class WeightedLayer():
             def __init__(self,w_shape=None,b_shape=None,bn_scale_shape=None,bn_offset_shape=None):
+                """
+                represents a trainable layer (such as a filter or a fully connected layer), with weights, biases, and batch normalization parameters. The layer is initialized by giving the shapes for each of these. If a layer does not include some of these (e.g. no bias or no batchnorm), the shape should be `None`. All the trainable parameters are initialized to `None` and can later be given concrete values.
+                Args:
+                    w_shape:
+                    b_shape:
+                    bn_scale_shape:
+                    bn_offset_shape:
+                """
                 self.w = None
                 self.w_shape = w_shape
                 self.b = None
@@ -32,31 +44,54 @@ class ResnetWeights():
 
         class ResnetScale():
             def __init__(self, scale_ind:int, hparams:ResNetHyperParameters, image_params:DataParams):
+                """
+                represents a single "scale" of resnet. A scale is composed of all the layers between two pooling\downsampling opeartions. The actual learnable weights are all initialized to be `None`, and can later be modified.
+                Args:
+                    scale_ind: the index of the scale. `0` indicate the first scale (right after the first pooling layer)
+                    hparams:
+                    image_params:
+                """
                 class ResnetBlock():
                     def __init__(self, block_ind:int, scale_ind:int, hparams:ResNetHyperParameters, image_params:DataParams):
-                        width = hparams.layer1_size*(hparams.stride_between_scales ** scale_ind)
+                        """
+                        represents a single "block" of resnet. A block is composed of all layers, surrounded by a residual connection. We do not use bottleneck blocks. The actual learnable weights are all initialized to be `None`, and can later be modified.
+                        Args:
+                            block_ind: the index of the block withing a scale. `0` indicate the first block in a scale.
+                            scale_ind: the index of the scale. `0` indicate the first scale (right after the first pooling layer)
+                            hparams:
+                            image_params:
+                        """
+
+                        # calc the depth (input depth and output depth) of the filters for this scale
+                        depth = hparams.first_layer_size*(hparams.stride_between_scales ** scale_ind)
+
+                        # the first filter in the block will have different dimensions: its input depth will be smaller (and equal to the previous output depth). This input depth will also be used in residual connections that need projections.
                         if scale_ind>0 and block_ind==0:
-                            prev_width = hparams.layer1_size*(hparams.stride_between_scales ** (scale_ind-1))
+                            prev_depth = hparams.first_layer_size*(hparams.stride_between_scales ** (scale_ind-1))
                         else:
-                            prev_width = width
+                            prev_depth = depth
+
+                        # the width and height of the feature image at the output of each filter
                         size = image_params.image_size//(hparams.stride_between_scales**(scale_ind+2))
 
-                        if (scale_ind > 0) and (block_ind == 0):
 
-                            w_shape = [1,1,int(prev_width),int(width)]
-                            bn_scale_shape = [int(size),int(size),int(width)]
+                        # add projection layer (if needed)
+                        if (scale_ind > 0) and (block_ind == 0):
+                            w_shape = [1,1,int(prev_depth),int(depth)] # projection is a 1by1 filter
+                            bn_scale_shape = [int(size),int(size),int(depth)]
                             bn_offset_shape = bn_scale_shape
                             self.projection = WeightedLayer(w_shape=w_shape,bn_scale_shape=bn_scale_shape,bn_offset_shape=bn_offset_shape)
                         else:
                             self.projection = WeightedLayer(None)
 
+                        # add convolutional layers to block
                         self.conv_layers = []
                         for k in range(hparams.layers_per_block):
-                            if k==0:
-                                w_shape = [int(hparams.filter_size),int(hparams.filter_size),int(prev_width),int(width)]
+                            if k==0: # first layer in block might have different input depth
+                                w_shape = [int(hparams.filter_size),int(hparams.filter_size),int(prev_depth),int(depth)]
                             else:
-                                w_shape = [int(hparams.filter_size), int(hparams.filter_size), int(width), int(width)]
-                            bn_scale_shape = [int(size),int(size),int(width)]
+                                w_shape = [int(hparams.filter_size), int(hparams.filter_size), int(depth), int(depth)]
+                            bn_scale_shape = [int(size),int(size),int(depth)]
                             bn_offset_shape = bn_scale_shape
                             self.conv_layers.append(WeightedLayer(w_shape=w_shape,bn_scale_shape=bn_scale_shape,bn_offset_shape=bn_offset_shape))
 
@@ -70,6 +105,7 @@ class ResnetWeights():
                             weights.extend(l.AsList(shapes,with_filters,with_batchnorm))
                         return weights
 
+                # add blocks to scale
                 self.blocks = []
                 for block_ind in range(hparams.num_blocks_per_scale[scale_ind]):
                     self.blocks.append(ResnetBlock(block_ind,scale_ind,hparams,image_params))
@@ -83,37 +119,66 @@ class ResnetWeights():
                     weights.extend(a.AsList(shapes,with_filters,with_batchnorm))
                 return weights
 
+        # the width and height of the feature image at the output of the first filter layer
         size = image_params.image_size/hparams.stride_between_scales
-        w_shape = [int(hparams.layer1_filter_size),int(hparams.layer1_filter_size),int(image_params.number_of_channels),int(hparams.layer1_size)]
-        bn_scale_shape = [int(size),int(size),int(hparams.layer1_size)]
-        bn_offset_shape = bn_scale_shape
-        self.layer1 = WeightedLayer(w_shape=w_shape, bn_scale_shape=bn_scale_shape, bn_offset_shape=bn_offset_shape)
 
+        # shape of filter and batch norm params for first filter layer in network
+        w_shape = [int(hparams.first_layer_filter_size),int(hparams.first_layer_filter_size),int(image_params.number_of_channels),int(hparams.first_layer_size)]
+        bn_scale_shape = [int(size),int(size),int(hparams.first_layer_size)]
+        bn_offset_shape = bn_scale_shape
+
+        # this is the first filter layer in the network
+        self.first_layer = WeightedLayer(w_shape=w_shape, bn_scale_shape=bn_scale_shape, bn_offset_shape=bn_offset_shape)
+
+        # add scales to network
         self.scales = []
         for scale_ind in range(len(hparams.num_blocks_per_scale)):
             self.scales.append(ResnetScale(scale_ind,hparams,image_params))
 
-        w_shape = [int(hparams.layer1_size*(hparams.stride_between_scales**(len(hparams.num_blocks_per_scale)-1))),int(image_params.num_classes)]
+        # add final, fully connected layer to network. this layer does not have batch norm, and therefore does have a bias term
+        w_shape = [int(hparams.first_layer_size*(hparams.stride_between_scales**(len(hparams.num_blocks_per_scale)-1))),int(image_params.num_classes)]
         b_shape = [int(image_params.num_classes)]
         self.final_layer = WeightedLayer(w_shape=w_shape,b_shape=b_shape)
 
     def AsList(self,shapes:bool=False,with_filters:bool=True,with_batchnorm:bool=True):
+        """
+        Args:
+            shapes: if `True`, output will be a list of shapes. otherwise, it will be a list of weights (including biases and batchnorm)
+            with_filters: if `True`, output will include the weights and biases of the weighted layers.
+            with_batchnorm:  if `True`, output will include batchnorm params of the weighted layers.
+
+        Returns:
+
+        """
         weights = []
-        weights.extend(self.layer1.AsList(shapes,with_filters,with_batchnorm))
+        weights.extend(self.first_layer.AsList(shapes,with_filters,with_batchnorm))
         for a in self.scales:
             weights.extend(a.AsList(shapes,with_filters,with_batchnorm))
         weights.extend(self.final_layer.AsList(shapes,with_filters,with_batchnorm))
         return weights
 
-    def NumberOfWeights(self):
-        shapes = self.AsList(shapes=True)
+    def NumberOfWeights(self,with_batchnorm:bool=True):
+        """
+        calculate number of weights in networks.
+        Args:
+            with_batchnorm:
+
+        Returns:
+
+        """
+        shapes = self.AsList(shapes=True,with_batchnorm=with_batchnorm)
         return np.sum([np.prod(u) for u in shapes if u is not None])
 
     def WeightedLayerIterator(self):
+        """
+        return an iterator over all weighted layers in network.
+        Returns:
+
+        """
         scale = 0
         while scale <= len(self.scales)+1:
             if scale==0:
-                yield self.layer1
+                yield self.first_layer
             elif scale==(len(self.scales)+1):
                 yield self.final_layer
             else:
@@ -156,7 +221,7 @@ class Resnet():
                     noise_batch_size = None
                 weights = self.__CreateWeightVariables(noise_batch_size)
             self.weights = weights
-            noise_batch_size = tf.shape(weights.layer1.w)[0]
+            noise_batch_size = tf.shape(weights.first_layer.w)[0]
             if self.batch_type=='BATCH_TYPE3':
                 input = tf.tile(tf.expand_dims(input,0), [noise_batch_size,1,1,1,1])
             self.__Build(input)
@@ -172,12 +237,12 @@ class Resnet():
 
         num_scales = len(self.hparams.num_blocks_per_scale)
 
-        x = tf.nn.relu(ConvBN(input, weights.layer1.w, self.hparams.stride_between_scales, weights.layer1.bn_scale, weights.layer1.bn_offset,self.order,self.batch_type))
+        x = tf.nn.relu(ConvBN(input, weights.first_layer.w, self.hparams.stride_between_scales, weights.first_layer.bn_scale, weights.first_layer.bn_offset,self.order,self.batch_type))
 
         if self.batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
-            x = tf.map_fn(lambda xx: MaxPool(xx, self.hparams.layer1_pool_size,self.hparams.stride_between_scales,self.order),x)
+            x = tf.map_fn(lambda xx: MaxPool(xx, self.hparams.first_layer_pool_size,self.hparams.stride_between_scales,self.order),x)
         else:
-            x = MaxPool(x, self.hparams.layer1_pool_size,self.hparams.stride_between_scales,self.order)
+            x = MaxPool(x, self.hparams.first_layer_pool_size,self.hparams.stride_between_scales,self.order)
 
         for i in range(num_scales):
             for j in range(self.hparams.num_blocks_per_scale[i]):
@@ -286,9 +351,9 @@ class Resnet():
         weights = ResnetWeights(self.hparams,self.image_params)
         num_scales = len(self.hparams.num_blocks_per_scale)
         initializer = tf.variance_scaling_initializer()
-        weights.layer1.w = tf.get_variable('initial_layer_w',batch_dim+weights.layer1.w_shape , tf.float32, initializer=initializer)
-        weights.layer1.bn_scale = tf.get_variable('initial_layer_bn_scale', batch_dim+permute(weights.layer1.bn_scale_shape), tf.float32, initializer=tf.ones_initializer())
-        weights.layer1.bn_offset = tf.get_variable('initial_layer_bn_offset',batch_dim+permute(weights.layer1.bn_offset_shape), tf.float32, initializer=tf.zeros_initializer())
+        weights.first_layer.w = tf.get_variable('initial_layer_w',batch_dim+weights.first_layer.w_shape , tf.float32, initializer=initializer)
+        weights.first_layer.bn_scale = tf.get_variable('initial_layer_bn_scale', batch_dim+permute(weights.first_layer.bn_scale_shape), tf.float32, initializer=tf.ones_initializer())
+        weights.first_layer.bn_offset = tf.get_variable('initial_layer_bn_offset',batch_dim+permute(weights.first_layer.bn_offset_shape), tf.float32, initializer=tf.zeros_initializer())
         for i in range(num_scales):
             for j in range(self.hparams.num_blocks_per_scale[i]):
                 if (i > 0) and (j == 0):
