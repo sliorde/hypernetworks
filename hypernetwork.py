@@ -4,7 +4,7 @@ from itertools import cycle
 from logging import Logger
 import os
 
-from utils import MultiLayerPerceptron, OptimizerReset,GetDevices,GetLogger
+from utils import MultiLayerPerceptron, OptimizerReset, GetDevices, GetLogger, GetAdamLR, PrintParams
 from params import GeneralParameters, HypernetworkHyperParameters, ResNetHyperParameters, DataParams, Cifar10Params,ResNetCifar10HyperParameters
 from target_network import Resnet, ResnetWeights
 
@@ -211,10 +211,8 @@ class Hypernetwork():
         else:
             return tuple(out)
 
-    def Train(self,sess:tf.Session,max_steps,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
-        # TODO: add validation steps!s
-        logger = GetLogger(initialize_from_checkpoint,checkpoint_file_name)
     def Train(self,sess:tf.Session,max_steps,logger,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
+        # TODO: add validation steps!s
         any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
         if initialize_from_checkpoint:
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
