@@ -45,9 +45,9 @@ class Cifar10Params(DataParams):
 
 class ResNetHyperParameters():
     def __init__(self):
-        self.layer1_filter_size = None
-        self.layer1_size = None
-        self.layer1_pool_size = None
+        self.first_layer_filter_size = None
+        self.first_layer_size = None
+        self.first_layer_pool_size = None
         self.filter_size = None
         self.stride_between_scales = None
         self.layers_per_block = None
@@ -58,9 +58,9 @@ class ResNetHyperParameters():
 
 class ResNetImageNetHyperParameters(ResNetHyperParameters):
     def __init__(self):
-        self.layer1_filter_size = 7
-        self.layer1_size = 64
-        self.layer1_pool_size = 3
+        self.first_layer_filter_size = 7
+        self.first_layer_size = 64
+        self.first_layer_pool_size = 3
         self.filter_size = 3
         self.stride_between_scales = 2
         self.layers_per_block = 2
@@ -71,9 +71,9 @@ class ResNetImageNetHyperParameters(ResNetHyperParameters):
 
 class ResNetCifar10HyperParameters(ResNetHyperParameters):
     def __init__(self):
-        self.layer1_filter_size = 3
-        self.layer1_size = 16
-        self.layer1_pool_size = 3
+        self.first_layer_filter_size = 3
+        self.first_layer_size = 16
+        self.first_layer_pool_size = 3
         self.filter_size = 3
         self.stride_between_scales = 2
         self.layers_per_block = 2
@@ -100,10 +100,10 @@ class HypernetworkHyperParameters():
 
         self.zero_fixer = 1e-8 # add this constant to the argument of sqrt, log, etc. so that the argument is never zero
 
-        self.initialization_std = 1e-2 #1e-1 # used for weights and biases # TODO
+        self.initialization_std = 1e-1 # used for weights and biases
         self.batch_size = 32 # batch size, during training
         self.validation_samples = 200  # how many times to sample the validation loss for getting an estimate of mean validation loss
-        self.learning_rate = 1e-5 #1e-9 #3e-4  # initial learning rate # TODO
+        self.learning_rate = 3e-4  # initial learning rate
         self.learning_rate_rate = 0.99998  # decay rate of learning rate - decay happens once every training step
         self.momentum = 0.9
-        self.lamBda = 1e6 #1e3 # 3e6 # initial lambda value (=coefficient of accuracy component in total loss) # TODO
+        self.lamBda = 1e3  #  lambda value (=coefficient of accuracy component in total loss)

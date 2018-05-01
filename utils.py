@@ -1,6 +1,3 @@
-import os
-import types
-
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import device_lib
@@ -16,17 +13,25 @@ def GetBiasVariable(shape, name, scale=1.0):
 def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=None,train_batch_norm=True,activation_on_last_layer=False,is_training=None,scale=1.0,batchnorm_decay=0.98,activation=tf.nn.relu,name=None,zero_fixer=1e-8):
     """
     Creates a multilayer perceptron (=MLP)
-    :param input: input layer to perceptron
-    :param widths: a list with the widths (=number of neurons) in each layer
-    :param with_batch_norm: should perfrom batch normalization?
-    :param where_to_batch_norm: (optional) a list with boolean values, one value for each layer. This determines whether to perform batch normalization in this layer.
-    :param train_batch_norm: (optional) whether to train the batch normalization's offsets and scales, or just use constant values
-    :param activation_on_last_layer: if boolean - whether to add activation on the last layer of the MLP. Otherwise, can be an actual activation function for the last layer
-    :param is_training: tf boolean variable which determines whether currently the graph is in training phase. This determines which batch normalization value to use.
-    :param scale: the variance of the initial values of the variables will be proportional to this
-    :param batchnorm_decay:  exponential decay constant for batch normalization
-    :param activation:
-    :return: three lists: 1) layers: a list of tuples (w,b) where each tuple is the weights and biases for a layer. 2) layer_outputs: a list of tensors, each tensor is the output of a layer. 3) batch_norm_params: a list of tuples (means,variances,offsets,scales), the former two are tensors, the latter two are variables
+    Args:
+        input: input layer to perceptron
+        widths: a list with the widths (=number of neurons) in each layer
+        with_batch_norm: should perfrom batch normalization?
+        where_to_batch_norm: (optional) a list with boolean values, one value for each layer. This determines whether to perform batch normalization in this layer.
+        train_batch_norm: (optional) whether to train the batch normalization's offsets and scales, or just use constant values
+        activation_on_last_layer: if boolean - whether to add activation on the last layer of the MLP. Otherwise, can be an actual activation function for the last layer
+        is_training: `bool` or boolean `tf.Variable` which determines whether currently the graph is in training phase. This determines which batch normalization value to use.
+        scale: (optional) the variance of the initial values of the variables will be proportional to this
+        batchnorm_decay: exponential decay constant for batch normalization
+        activation:
+        name:
+        zero_fixer: small numnber to be used for division by zero etc.
+
+    Returns:
+        three lists:
+            layer_outputs: activation maps tensors
+            layers: tuples (w,b) of variable tensors
+            batch_norm_params: tuples (means,variances,offsets,scales) for batch norm parameters
     """
     inds = np.nonzero(widths)[0]
     widths = [widths[ind] for ind in inds]
@@ -70,12 +75,17 @@ def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=
 
 def AddBacthNormalizationOps(input, is_training, train_BN_params, batchnorm_decay, zero_fixer=1e-8, name=None):
     """
-    :param input: input layer
-    :param is_training: a bool or a tf boolean tensor which determines whether currently the graph is in training phase. This determines whether to use batch or aggregated mean and std
-    :param train_BN_params: whether to train the batch normalization's offsets and scales, or just use constant values
-    :param batchnorm_decay:  exponential decay constant for batch normalization
-    :param name:
-    :return: the tensor after the batch normalization operation
+
+    Args:
+        input: input layer
+        is_training: a bool or a tf boolean tensor which determines whether currently the graph is in training phase. This determines whether to use batch or aggregated mean and std
+        train_BN_params: whether to train the batch normalization's offsets and scales, or just use constant values
+        batchnorm_decay: exponential decay constant for batch normalization
+        zero_fixer: small numnber to be used for division by zero etc.
+        name:
+
+    Returns:
+        a tuple (output_layer, (means,variances,offsets,scales))
     """
     batch_means, batch_variances = tf.nn.moments(input, list(np.arange(0, len(input.shape) - 1)),keep_dims=False)
     offsets = tf.get_variable(name=GiveName(name,'_offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
@@ -145,7 +155,22 @@ def ConvType2(x, w, stride, order):
 def ConvType4(x, w, stride, order):
     return Conv2D(x, w, stride,order)
 
-def ConvBN(x, w, stride, s, o, order, batch_type='BATCH_TYPE1',name=None):
+def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=None):
+    """
+    perform convolution and "batch norm", where the batch norm does not calculate means and variances
+    Args:
+        x:
+        w:
+        stride:
+        scale:
+        offset:
+        order:
+        batch_type:
+        name:
+
+    Returns:
+
+    """
     if batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
         s = tf.expand_dims(s, 1)
         o = tf.expand_dims(o, 1)
