@@ -106,4 +106,4 @@ class HypernetworkHyperParameters():
         self.learning_rate = 3e-4  # initial learning rate
         self.learning_rate_rate = 0.99998  # decay rate of learning rate - decay happens once every training step
         self.momentum = 0.9
-        self.lamBda = 1e3  # 3e6 # initial lambda value (=coefficient of accuracy component in total loss)
+        self.lamBda = 1e3  #  lambda value (=coefficient of accuracy component in total loss)
