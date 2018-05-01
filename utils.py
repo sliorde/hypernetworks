@@ -1,3 +1,5 @@
+import os
+import types
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import device_lib
@@ -172,14 +174,14 @@ def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=No
 
     """
     if batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
-        s = tf.expand_dims(s, 1)
-        o = tf.expand_dims(o, 1)
+        scale = tf.expand_dims(scale, 1)
+        offset = tf.expand_dims(offset, 1)
 
     conv_func = [ConvType1,ConvType2,ConvType2,ConvType4]
     batch_type = ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4'].index(batch_type)
     conv_func = conv_func[batch_type]
 
-    return tf.identity(conv_func(x, w, stride, order) * s + o, name)
+    return tf.identity(conv_func(x, w, stride, order) * scale + offset, name)
 
 def OptimizerReset(optimizer, graph=None, name=None):
     """
