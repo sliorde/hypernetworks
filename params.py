@@ -100,10 +100,10 @@ class HypernetworkHyperParameters():
 
         self.zero_fixer = 1e-8 # add this constant to the argument of sqrt, log, etc. so that the argument is never zero
 
-        self.initialization_std = 1e-1 # used for weights and biases
+        self.initialization_std = 1e-2 #1e-1 # used for weights and biases # TODO
         self.batch_size = 32 # batch size, during training
         self.validation_samples = 200  # how many times to sample the validation loss for getting an estimate of mean validation loss
-        self.learning_rate = 3e-4  # initial learning rate
+        self.learning_rate = 1e-5 #1e-9 #3e-4  # initial learning rate # TODO
         self.learning_rate_rate = 0.99998  # decay rate of learning rate - decay happens once every training step
         self.momentum = 0.9
-        self.lamBda = 1e3  # 3e6 # initial lambda value (=coefficient of accuracy component in total loss)
+        self.lamBda = 1e6 #1e3 # 3e6 # initial lambda value (=coefficient of accuracy component in total loss) # TODO

@@ -1,8 +1,11 @@
+import os
+import types
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import device_lib
 import logging
-import os
+from datetime import datetime
 
 def GetWeightVariable(shape, name, scale=1.0):
     return tf.get_variable(shape=shape, initializer=tf.variance_scaling_initializer(scale=scale),name=name)
@@ -144,14 +147,12 @@ def ConvType4(x, w, stride, order):
 
 def ConvBN(x, w, stride, s, o, order, batch_type='BATCH_TYPE1',name=None):
     if batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
-        s = tf.expand_dims(s,1)
+        s = tf.expand_dims(s, 1)
         o = tf.expand_dims(o, 1)
 
     conv_func = [ConvType1,ConvType2,ConvType2,ConvType4]
     batch_type = ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4'].index(batch_type)
     conv_func = conv_func[batch_type]
-
-
 
     return tf.identity(conv_func(x, w, stride, order) * s + o, name)
 
@@ -169,20 +170,17 @@ def OptimizerReset(optimizer, graph=None, name=None):
         slots.extend(optimizer._get_beta_accumulators())
     return tf.variables_initializer(slots, name=name)
 
-def GetLogger(initialize_from_checkpoint=False,checkpoint_file_name=None):
-    if initialize_from_checkpoint:
-        log_file_mode = 'a'
-    else:
-        log_file_mode = 'w'
-        if not os.path.exists(os.path.dirname(checkpoint_file_name)):
-            os.makedirs(os.path.dirname(checkpoint_file_name))
+def GetLogger(log_file_mode='w',log_file_path='log.txt'):
     log_format = logging.Formatter("%(asctime)s : %(message)s")
+
+    # reset tensorflow handlers
+    logger = logging.getLogger('tensorflow')
+    logger.setLevel(logging.INFO)
+    logger.handlers = []
+
+    # register handlers
     logger = logging.getLogger()
-    dir_name = os.path.dirname(checkpoint_file_name)
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name)
-    file_name = dir_name+'/log.txt'
-    file_handler = logging.FileHandler(file_name, mode=log_file_mode)
+    file_handler = logging.FileHandler(log_file_path, mode=log_file_mode)
     file_handler.setFormatter(log_format)
     logger.addHandler(file_handler)
     console_handler = logging.StreamHandler()
@@ -197,6 +195,24 @@ def GetDevices():
     cpu = [x.name for x in local_device_protos if x.device_type == 'CPU'][0]
     devices = {'cpu':cpu, 'gpus':gpus}
     return devices
+
+def CreateDir(dir):
+    if not tf.gfile.Exists(dir):
+        tf.gfile.MakeDirs(dir)
+    return dir
+
+def CreateOutputDir(prefix, filename):
+    exp_id = os.path.splitext(os.path.basename(filename))[0]
+    run_name = datetime.now().strftime('%Y:%m:%d:%H:%M:%S')
+    return CreateDir(os.path.join(prefix, exp_id, run_name))
+
+def GetAdamLR(adam):
+    _beta1_power, _beta2_power = adam._get_beta_accumulators()
+    current_lr = (adam._lr_t * tf.sqrt(1 - _beta2_power) / (1 - _beta1_power))
+    return current_lr
+
+def PrintParams(logger, params):
+    logger.info({key: val for key, val in vars(params).items() if not isinstance(val, types.FunctionType)})
 
 
 """

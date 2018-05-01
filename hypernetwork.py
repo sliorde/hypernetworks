@@ -4,7 +4,7 @@ from itertools import cycle
 from logging import Logger
 import os
 
-from utils import MultiLayerPerceptron, OptimizerReset,GetDevices,GetLogger
+from utils import MultiLayerPerceptron, OptimizerReset, GetDevices, GetAdamLR, PrintParams
 from params import GeneralParameters, HypernetworkHyperParameters, ResNetHyperParameters, DataParams, Cifar10Params,ResNetCifar10HyperParameters
 from target_network import Resnet, ResnetWeights
 
@@ -53,6 +53,7 @@ class Hypernetwork():
             if mode == 'TRAIN':
                 self.__AddOptimizationOps()
             self.initializer = tf.variables_initializer(self.graph.get_collection('variables'),name='initializer')
+            self.graph.finalize()
 
 
     def __AddGeneratorOps(self):
@@ -69,43 +70,73 @@ class Hypernetwork():
             num_of_weights_per_filter[l] += 1 if l.b_shape is not None else 0
             num_of_filters[l] = l.w_shape[-1]
 
-        with tf.device(self.cpu):
-            step_counter = tf.Variable(0, trainable=False,name='step_counter')
-            is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
+        # with tf.device(self.cpu):
+        #     step_counter = tf.Variable(0, trainable=False,name='step_counter')
+        #     is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
+        # TODO
+        step_counter = tf.Variable(0, trainable=False,name='step_counter')
+        is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
 
         mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)[0]
 
-        with tf.device(next(self.gpus)):
-            e_layer_outputs = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
-            codes = {}
-            for i,l in enumerate(layers):
-                code_size = self.hnet_hparams.code_size_formula(num_of_weights_per_filter[l],num_of_filters[l])
-                codes[l] = mlp_builder(e_layer_outputs[-1],[num_of_filters[l]*code_size],'codes{:d}'.format(i))
-                codes[l] = tf.reshape(codes[l],[-1,num_of_filters[l],code_size],'codes{:d}'.format(i))
+        # with tf.device(next(self.gpus)):
+        #     e_layer_outputs = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
+        #     codes = {}
+        #     for i,l in enumerate(layers):
+        #         code_size = self.hnet_hparams.code_size_formula(num_of_weights_per_filter[l],num_of_filters[l])
+        #         codes[l] = mlp_builder(e_layer_outputs[-1],[num_of_filters[l]*code_size],'codes{:d}'.format(i))
+        #         codes[l] = tf.reshape(codes[l],[-1,num_of_filters[l],code_size],'codes{:d}'.format(i))
+        # TODO
+        e_layer_outputs = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
+        codes = {}
+        for i,l in enumerate(layers):
+            code_size = self.hnet_hparams.code_size_formula(num_of_weights_per_filter[l],num_of_filters[l])
+            codes[l] = mlp_builder(e_layer_outputs[-1],[num_of_filters[l]*code_size],'codes{:d}'.format(i))
+            codes[l] = tf.reshape(codes[l],[-1,num_of_filters[l],code_size],'codes{:d}'.format(i))
 
         wg_layer_outputs={}
         for i,l in enumerate(layers):
-            with tf.device(next(self.gpus)):
-                layer_widths = [self.hnet_hparams.wg_hidden_layer_size_formula(num_of_weights_per_filter[l],num_of_filters[l])]*self.hnet_hparams.wg_number_of_hidden_layers
-                wg_layer_outputs_ = mlp_builder(codes[l],layer_widths + [num_of_weights_per_filter[l]],'weight_generator{:d}'.format(i))
-                wg_layer_outputs[l] = wg_layer_outputs_
-                layer_output = tf.transpose(wg_layer_outputs[l][-1],[0,2,1])
-                if l.b_shape is None:
-                    l.w = tf.reshape(layer_output,[-1]+l.w_shape)
-                else:
-                    l.w = tf.reshape(layer_output[:,:-1,:], [-1]+l.w_shape)
-                    l.b = layer_output[:,-1,:]
-                # TODO: change this if want to generate also BN!!
-                if l.bn_scale_shape is not None:
-                    l.bn_scale = tf.ones([batch_size] + l.bn_scale_shape)
-                if l.bn_offset_shape is not None:
-                    l.bn_offset = tf.zeros([batch_size] + l.bn_offset_shape)
-
-        with tf.device(self.cpu):
+            # with tf.device(next(self.gpus)):
+            #     layer_widths = [self.hnet_hparams.wg_hidden_layer_size_formula(num_of_weights_per_filter[l],num_of_filters[l])]*self.hnet_hparams.wg_number_of_hidden_layers
+            #     wg_layer_outputs_ = mlp_builder(codes[l],layer_widths + [num_of_weights_per_filter[l]],'weight_generator{:d}'.format(i))
+            #     wg_layer_outputs[l] = wg_layer_outputs_
+            #     layer_output = tf.transpose(wg_layer_outputs[l][-1],[0,2,1])
+            #     if l.b_shape is None:
+            #         l.w = tf.reshape(layer_output,[-1]+l.w_shape)
+            #     else:
+            #         l.w = tf.reshape(layer_output[:,:-1,:], [-1]+l.w_shape)
+            #         l.b = layer_output[:,-1,:]
+            #     # TODO: change this if want to generate also BN!!
+            #     if l.bn_scale_shape is not None:
+            #         l.bn_scale = tf.ones([batch_size] + l.bn_scale_shape)
+            #     if l.bn_offset_shape is not None:
+            #         l.bn_offset = tf.zeros([batch_size] + l.bn_offset_shape)
+            # TODO
+            layer_widths = [self.hnet_hparams.wg_hidden_layer_size_formula(num_of_weights_per_filter[l],num_of_filters[l])]*self.hnet_hparams.wg_number_of_hidden_layers
+            wg_layer_outputs_ = mlp_builder(codes[l],layer_widths + [num_of_weights_per_filter[l]],'weight_generator{:d}'.format(i))
+            wg_layer_outputs[l] = wg_layer_outputs_
+            layer_output = tf.transpose(wg_layer_outputs[l][-1],[0,2,1])
+            if l.b_shape is None:
+                l.w = tf.reshape(layer_output,[-1]+l.w_shape)
+            else:
+                l.w = tf.reshape(layer_output[:,:-1,:], [-1]+l.w_shape)
+                l.b = layer_output[:,-1,:]
             # TODO: change this if want to generate also BN!!
-            flattened_network = weights.AsList(with_batchnorm=False)
-            flattened_network = [tf.reshape(a,[batch_size]+[-1]) for a in flattened_network if a is not None]
-            flattened_network = tf.concat(flattened_network,1)
+            if l.bn_scale_shape is not None:
+                l.bn_scale = tf.ones([batch_size] + l.bn_scale_shape)
+            if l.bn_offset_shape is not None:
+                l.bn_offset = tf.zeros([batch_size] + l.bn_offset_shape)
+
+        # TODO
+        # with tf.device(self.cpu):
+        #     # TODO: change this if want to generate also BN!!
+        #     flattened_network = weights.AsList(with_batchnorm=False)
+        #     flattened_network = [tf.reshape(a,[batch_size]+[-1]) for a in flattened_network if a is not None]
+        #     flattened_network = tf.concat(flattened_network,1)
+
+        flattened_network = weights.AsList(with_batchnorm=False)
+        flattened_network = [tf.reshape(a,[batch_size]+[-1]) for a in flattened_network if a is not None]
+        flattened_network = tf.concat(flattened_network,1)
 
         self.weights = weights
         self.layers = layers
@@ -120,34 +151,53 @@ class Hypernetwork():
 
     def __AddOptimizationOps(self):
 
-        with tf.device(next(self.gpus)):
-            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,order='NHWC',batch_type='BATCH_TYPE1')
+        # TODO
+        # with tf.device(next(self.gpus)):
+        #     target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,order='NHWC',batch_type='BATCH_TYPE1')
+        #
+        #     accuracy_loss = tf.reduce_mean(target.loss)
+        #     accuracy = target.average_accuracy
+        target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,order='NHWC',batch_type='BATCH_TYPE1')
+        accuracy_loss = tf.reduce_mean(target.loss)
+        accuracy = target.average_accuracy
 
-            accuracy_loss = tf.reduce_mean(target.loss)
-            accuracy = target.average_accuracy
+        # with tf.device(next(self.gpus)):
+        #     mutual_distances = tf.reduce_sum(tf.abs(tf.expand_dims(self.flattened_network, 0) - tf.expand_dims(self.flattened_network, 1)), 2,name='mutual_squared_distances')
+        #     nearest_distances = tf.identity(-1 * tf.nn.top_k(-1 * mutual_distances, k=2)[0][:, 1],name='nearest_distances')
+        #     entropy_estimate = tf.identity(self.hnet_hparams.input_noise_size * tf.reduce_mean(tf.log(nearest_distances + self.hnet_hparams.zero_fixer)) + tf.digamma(tf.cast(self.batch_size, tf.float32)), name='entropy_estimate')
+        #
+        #     diversity_loss = tf.identity(- 1 * entropy_estimate, name='diversity_loss')
+        #
+        #     loss = tf.identity(self.hnet_hparams.lamBda* accuracy_loss + diversity_loss, name='loss')
+        # TODO
+        mutual_distances = tf.reduce_sum(tf.abs(tf.expand_dims(self.flattened_network, 0) - tf.expand_dims(self.flattened_network, 1)), 2,name='mutual_squared_distances')
+        nearest_distances = tf.identity(-1 * tf.nn.top_k(-1 * mutual_distances, k=2)[0][:, 1],name='nearest_distances')
+        entropy_estimate = tf.identity(self.hnet_hparams.input_noise_size * tf.reduce_mean(tf.log(nearest_distances + self.hnet_hparams.zero_fixer)) + tf.digamma(tf.cast(self.batch_size, tf.float32)), name='entropy_estimate')
 
-        with tf.device(next(self.gpus)):
-            mutual_distances = tf.reduce_sum(tf.abs(tf.expand_dims(self.flattened_network, 0) - tf.expand_dims(self.flattened_network, 1)), 2,name='mutual_squared_distances')
-            nearest_distances = tf.identity(-1 * tf.nn.top_k(-1 * mutual_distances, k=2)[0][:, 1],name='nearest_distances')
-            entropy_estimate = tf.identity(self.hnet_hparams.input_noise_size * tf.reduce_mean(tf.log(nearest_distances + self.hnet_hparams.zero_fixer)) + tf.digamma(tf.cast(self.batch_size, tf.float32)), name='entropy_estimate')
+        diversity_loss = tf.identity(-1 * entropy_estimate, name='diversity_loss')
 
-            diversity_loss = tf.identity(- 1 * entropy_estimate, name='diversity_loss')
+        loss = tf.identity(self.hnet_hparams.lamBda * accuracy_loss + diversity_loss, name='loss')
 
-            loss = tf.identity(self.hnet_hparams.lamBda* accuracy_loss + diversity_loss, name='loss')
+        # TODO
+        # with tf.device(self.cpu):
+        #     learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
+        #     learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
+        #     update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
+        #     steps_before_train_step = [update_learning_rate]
 
-        with tf.device(self.cpu):
-            learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
-            learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
-            update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
-            steps_before_train_step = [update_learning_rate]
+        learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
+        learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
+        update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
+        steps_before_train_step = [update_learning_rate]
 
-        optimizer = tf.train.MomentumOptimizer(learning_rate,self.hnet_hparams.momentum)
+        #optimizer = tf.train.MomentumOptimizer(learning_rate,self.hnet_hparams.momentum) # TODO
+        optimizer = tf.train.AdamOptimizer(learning_rate)
         with tf.control_dependencies(steps_before_train_step):
             train_step = optimizer.minimize(loss, name='train_step',colocate_gradients_with_ops=True)
             with tf.control_dependencies([train_step]):
                 step_counter_update = tf.assign_add(self.step_counter, 1, name='step_counter_update')
         train_step = tf.group(*(steps_before_train_step + [train_step, step_counter_update]), name='update_and_train')
-        reset_optimizer = OptimizerReset(optimizer,self.graph,'resetter')
+        reset_optimizer = OptimizerReset(optimizer,self.graph, name='resetter')
 
         initializer = tf.variables_initializer(self.graph.get_collection('variables'), name='initializer')
 
@@ -162,7 +212,9 @@ class Hypernetwork():
         self.diversity_loss = diversity_loss
         self.loss = loss
         self.learning_rate = learning_rate
+        self.learning_rate_adam = GetAdamLR(optimizer)
         self.learning_rate_rate = learning_rate_rate
+        self.get_learning_rate = lambda: self.learning_rate_adam.eval() if isinstance(optimizer, tf.train.AdamOptimizer) else self.learning_rate
         self.update_learning_rate = update_learning_rate
         self.optimizer = optimizer
         self.step_counter_update = step_counter_update
@@ -181,8 +233,8 @@ class Hypernetwork():
         else:
             return tuple(out)
 
-    def Train(self,sess:tf.Session,max_steps,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
-        logger = GetLogger(initialize_from_checkpoint,checkpoint_file_name)
+    def Train(self,sess:tf.Session,max_steps,logger,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
+        any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
         if initialize_from_checkpoint:
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
         else:
@@ -190,8 +242,8 @@ class Hypernetwork():
         while i<=max_steps:
             if i%100 == 0:
                 i, accuracy, accuracy_loss, diversity_loss, total_loss = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss])
-                logger.info("step {:d}: accuracy >>>{:.4f}<<<".format(i, accuracy))
-                logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.5f}, {:.5f} ,{:.5f})'.format(accuracy_loss, diversity_loss,total_loss))
+                logger.info("step {:d}: accuracy={:.4f} lr={:.6f}".format(i, accuracy, self.get_learning_rate()))
+                logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
             else:
                 i = self.TrainStep(sess)
