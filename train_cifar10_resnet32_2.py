@@ -17,6 +17,12 @@ logger = GetLogger(log_file_mode='a' if initialize_from_checkpoint else 'w', log
 general_params = GeneralParameters()
 hparams = HypernetworkHyperParameters()
 
+# override
+hparams.initialization_std = 1e-3
+hparams.learning_rate = 1e-6
+hparams.learning_rate_rate = 0.9999
+hparams.lamBda = 1e6
+
 # set random seeds
 np.random.seed(general_params.seed)
 tf.set_random_seed(general_params.seed)

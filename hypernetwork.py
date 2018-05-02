@@ -162,7 +162,7 @@ class Hypernetwork():
 
             diversity_loss = tf.identity(- 1 * entropy_estimate, name='diversity_loss')
 
-            loss = tf.identity(self.hnet_hparams.lamBda* accuracy_loss + diversity_loss, name='loss')
+            loss = tf.identity(self.hnet_hparams.lamBda * accuracy_loss + diversity_loss, name='loss')
 
         #with tf.device(self.cpu):
         learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
@@ -203,6 +203,11 @@ class Hypernetwork():
         self.initializer = initializer
         self.saver = saver
 
+        tf.summary.scalar('loss', self.loss)
+        tf.summary.scalar('learning_rate', self.learning_rate)
+        tf.summary.scalar('learning_rate_adam', self.learning_rate_adam)
+        self.summary_op = tf.summary.merge_all()
+
     def TrainStep(self,sess:tf.Session,additional_tensors_to_run=[]):
         z = self.SampleInput(self.hnet_hparams.batch_size)
         tensors_to_run = [self.train_step,self.step_counter]+additional_tensors_to_run
@@ -213,7 +218,7 @@ class Hypernetwork():
         else:
             return tuple(out)
 
-    def Train(self,sess:tf.Session,max_steps,logger,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
+    def Train(self,sess:tf.Session,max_steps,logger,writer,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
         # TODO: add validation steps!s
         any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
         if initialize_from_checkpoint:
@@ -222,10 +227,12 @@ class Hypernetwork():
             i = self.Initialize(sess)
         while i<=max_steps:
             if i%100 == 0:
-                i, accuracy, accuracy_loss, diversity_loss, total_loss = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss])
+                i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
                 logger.info("step {:d}: accuracy={:.4f} lr={:.6f}".format(i, accuracy, self.get_learning_rate()))
                 logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
+                writer.add_summary(summary, i)
+                writer.flush()
             else:
                 i = self.TrainStep(sess)
 
