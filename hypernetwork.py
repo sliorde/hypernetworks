@@ -228,7 +228,7 @@ class Hypernetwork():
         while i<=max_steps:
             if i%100 == 0:
                 i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
-                logger.info("step {:d}: accuracy={:.4f} lr={:.6f}".format(i, accuracy, self.get_learning_rate()))
+                logger.info("step {:d}: accuracy={:.4f} lr={:.8f}".format(i, accuracy, self.get_learning_rate()))
                 logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
                 writer.add_summary(summary, i)
