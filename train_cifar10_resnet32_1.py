@@ -26,5 +26,5 @@ training_data = Cifar10DataFetcher('TRAIN', batch_size=hparams.batch_size, order
 
 # create and train hypernet
 hnet = Hypernetwork(training_data.image, training_data.label, 'TRAIN', hnet_hparams=hparams)
-with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+with tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)) as sess:
     hnet.Train(sess, max_steps=1e6, logger=logger, checkpoint_file_name=output_dir)

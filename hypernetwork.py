@@ -162,11 +162,11 @@ class Hypernetwork():
 
             loss = tf.identity(self.hnet_hparams.lamBda* accuracy_loss + diversity_loss, name='loss')
 
-        with tf.device(self.cpu):
-            learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
-            learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
-            update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
-            steps_before_train_step = [update_learning_rate]
+        #with tf.device(self.cpu):
+        learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
+        learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
+        update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
+        steps_before_train_step = [update_learning_rate]
 
         #optimizer = tf.train.MomentumOptimizer(learning_rate,self.hnet_hparams.momentum) # TODO
         optimizer = tf.train.AdamOptimizer(learning_rate)
