@@ -92,7 +92,7 @@ class Hypernetwork():
             is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
 
         # use this function to construct MLPs for extractor and weight generators
-        mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)[0]
+        mlp_builder = lambda input, widths, name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)[0]
 
         # extractor
         with tf.device(next(self.gpus)):
@@ -226,7 +226,7 @@ class Hypernetwork():
         else:
             i = self.Initialize(sess)
         while i<=max_steps:
-            if i%100 == 0:
+            if i % 100 == 0:
                 i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
                 logger.info("step {:d}: accuracy={:.4f} lr={:.8f}".format(i, accuracy, self.get_learning_rate()))
                 logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))

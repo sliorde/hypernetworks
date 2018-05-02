@@ -88,7 +88,7 @@ class Cifar10DataFetcher():
             def preprocess_image(image, is_training):
                 ##TODO: make this work for NCHW as well
                 if is_training:
-                    image = tf.image.resize_image_with_crop_or_pad(image, params.image_size + 8, params.image_size+ 8)
+                    image = tf.image.resize_image_with_crop_or_pad(image, params.image_size + 8, params.image_size + 8)
                     image = tf.random_crop(image, [params.image_size, params.image_size, params.number_of_channels])
                     image = tf.image.random_flip_left_right(image)
                 return tf.image.per_image_standardization(image)

@@ -94,7 +94,7 @@ class HypernetworkHyperParameters():
         self.input_noise_size = 500  # dimension of noise vector z
         self.input_noise_bound = 1  # z will be sampled from a uniform distribution [-input_noise_bound,input_noise_bound]
         self.e_layer_sizes = [800,800,800] # sizes of hidden layers for extractor
-        self.wg_number_of_hidden_layers = 3 # number of hidden layers for each weight generator
+        self.wg_number_of_hidden_layers = 1 # number of hidden layers for each weight generator
         self.wg_hidden_layer_size_formula = lambda filter_size, number_of_filters: ceil(12 * sqrt(filter_size)) # size of each hidden layer for weight generator
         self.code_size_formula = lambda filter_size,number_of_filters: ceil(log2(filter_size)) # code size at the input the weight generator
 
