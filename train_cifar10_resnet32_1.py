@@ -24,7 +24,13 @@ tf.set_random_seed(general_params.seed)
 # get training data pipeline. TODO: get also validation data
 training_data = Cifar10DataFetcher('TRAIN', batch_size=hparams.batch_size, order='NHWC')
 
-# create and train hypernet
+# create hypernet
 hnet = Hypernetwork(training_data.image, training_data.label, 'TRAIN', hnet_hparams=hparams)
+
+# protobuf computational graph
+with open(os.path.join(output_dir, 'graph.pb'), 'w') as f:
+    f.write(str(hnet.graph.as_graph_def()))
+
+# train
 with tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)) as sess:
     hnet.Train(sess, max_steps=1e6, logger=logger, checkpoint_file_name=output_dir)

@@ -67,6 +67,8 @@ class Hypernetwork():
                 self.__AddOptimizationOps()
             self.initializer = tf.variables_initializer(self.graph.get_collection('variables'),name='initializer')
 
+        self.graph.finalize()
+
 
     def __AddGeneratorOps(self):
 
