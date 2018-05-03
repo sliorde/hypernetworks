@@ -41,7 +41,7 @@ class Cifar10Params(DataParams):
 
         self.path = 'data/cifar10/'
 
-        self.order = 'NCHW'  # 'NHWC', 'NCHW'
+        self.order = 'NHWC'
 
 class ResNetHyperParameters():
     def __init__(self):
