@@ -45,7 +45,7 @@ class ResnetWeights():
         class ResnetScale():
             def __init__(self, scale_ind:int, hparams:ResNetHyperParameters, image_params:DataParams):
                 """
-                represents a single "scale" of resnet. A scale is composed of all the layers between two pooling\downsampling opeartions. The actual learnable weights are all initialized to be `None`, and can later be modified.
+                represents a single "scale" of resnet. A scale is composed of all the layers between two pooling\downsampling operations. The actual learnable weights are all initialized to be `None`, and can later be modified.
                 Args:
                     scale_ind: the index of the scale. `0` indicate the first scale (right after the first pooling layer)
                     hparams:
@@ -195,7 +195,7 @@ class ResnetWeights():
 
 
 class Resnet():
-    def __init__(self, input, hparams:ResNetHyperParameters, image_params:DataParams, labels=None, train=False, weights:ResnetWeights=None, batch_type='BATCH_TYPE1', noise_batch_size=1, graph=None):
+    def __init__(self, input, hparams:ResNetHyperParameters, image_params:DataParams, labels=None, train=False, weights:ResnetWeights=None, noise_batch_size=1, graph=None):
         """
         a resnet model that can be trained and used for inference. The weight for the model can either be created as variables from within this object, or given from outside (for example, from a hypernetwork generator)
         Args:
@@ -211,7 +211,7 @@ class Resnet():
             graph:
         """
         self.order = image_params.order
-        self.batch_type = batch_type
+        self.batch_type = hparams.batch_type
         self.labels = labels
         self.input = input
 
@@ -222,16 +222,16 @@ class Resnet():
         if self.order not in {'NCHW','NHWC'}:
             raise ValueError("invalid value for `order`")
 
-        if batch_type.upper() not in {'BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4'}:
+        if self.batch_type.upper() not in {'BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4','BATCH_TYPE5'}: # TODO clean up
             raise ValueError("invalid value for `batch_type`")
 
         if graph is None:
             graph = tf.get_default_graph()
         with graph.as_default():
             if weights is None: # if weights were not supplied, create new variables
-                if batch_type in ['BATCH_TYPE1','BATCH_TYPE2']:
+                if self.batch_type in ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE5']: # TODO clean up
                     noise_batch_size = input.shape[0]
-                elif batch_type=='BATCH_TYPE4':
+                elif self.batch_type=='BATCH_TYPE4':
                     noise_batch_size = None
                 weights = self.__CreateWeightVariables(noise_batch_size)
             self.weights = weights
@@ -284,7 +284,7 @@ class Resnet():
             x = tf.reduce_mean(x, [-2, -1])
 
         x = tf.expand_dims(x, -1)
-        if self.batch_type=='BATCH_TYPE1':
+        if self.batch_type=='BATCH_TYPE1' or self.batch_type=='BATCH_TYPE5': # TODO clean up
             w = weights.final_layer.w
         elif self.batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
             w = tf.expand_dims(weights.final_layer.w,1)

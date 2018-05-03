@@ -155,7 +155,7 @@ class Hypernetwork():
 
         with tf.device(next(self.gpus)):
             # create the target resnet network, with `self.weights` - the weights generated from this hypernetwork
-            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,batch_type='BATCH_TYPE1')
+            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights)
 
             # add accuracy loss ops
             accuracy_loss = tf.reduce_mean(target.loss)
@@ -211,6 +211,8 @@ class Hypernetwork():
         self.saver = saver
 
         tf.summary.scalar('loss', self.loss)
+        tf.summary.scalar('accuracy_loss', self.accuracy_loss)
+        tf.summary.scalar('accuracy', self.accuracy)
         tf.summary.scalar('learning_rate', self.learning_rate)
         tf.summary.scalar('learning_rate_adam', self.learning_rate_adam)
         self.summary_op = tf.summary.merge_all()

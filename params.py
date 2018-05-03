@@ -82,6 +82,8 @@ class ResNetCifar10HyperParameters(ResNetHyperParameters):
         self.momentum = 0.9
         self.learning_rate = 0.1
 
+        self.batch_type = 'BATCH_TYPE1'
+
 
 class HypernetworkHyperParameters():
     """
