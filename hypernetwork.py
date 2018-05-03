@@ -3,6 +3,7 @@ import tensorflow as tf
 from itertools import cycle
 from logging import Logger
 import os
+from time import time
 
 from utils import MultiLayerPerceptron, OptimizerReset, GetDevices, GetLogger, GetAdamLR, PrintParams
 from params import GeneralParameters, HypernetworkHyperParameters, ResNetHyperParameters, DataParams, Cifar10Params,ResNetCifar10HyperParameters
@@ -19,7 +20,7 @@ LEARNING_RATE_RATE_FILE_NAME = 'lrr.txt'
 update_dict = {'learning_rate':LEARNING_RATE_FILE_NAME,'learning_rate_rate':LEARNING_RATE_RATE_FILE_NAME}
 
 class Hypernetwork():
-    def __init__(self, x,y, mode:str='EVAL', general_params=GeneralParameters(), hnet_hparams=HypernetworkHyperParameters(), target_hparams:ResNetHyperParameters=ResNetCifar10HyperParameters(), image_params:DataParams=Cifar10Params(), devices=None,graph=None):
+    def __init__(self, x, y, mode:str='EVAL', general_params=GeneralParameters(), hnet_hparams=HypernetworkHyperParameters(), target_hparams:ResNetHyperParameters=ResNetCifar10HyperParameters(), image_params:DataParams=Cifar10Params(), devices=None, graph=None):
         """
 
         Args:
@@ -71,6 +72,8 @@ class Hypernetwork():
                 self.__AddOptimizationOps()
             self.initializer = tf.variables_initializer(self.graph.get_collection('variables'),name='initializer')
 
+        self.graph.finalize()
+
 
     def __AddGeneratorOps(self):
 
@@ -79,6 +82,12 @@ class Hypernetwork():
 
         # create an empty ResnetWeights object, which will populated by the hypernet
         weights = ResnetWeights(self.target_hparams,self.image_params)
+
+        # layout
+        if self.image_params.order == 'NCHW':
+            permute = lambda u: [u[2],u[0],u[1]]
+        else:
+            permute = lambda u:u
 
         # the list of all trainable weight layers in the resnet, to be populated
         layers = list(weights.WeightedLayerIterator())
@@ -124,9 +133,9 @@ class Hypernetwork():
                     l['b'] = layer_output[:,-1,:]
                 # TODO: change this if want to generate also BN!!
                 if l.bn_scale_shape is not None:
-                    l['bn_scale']=tf.ones([batch_size] + l.bn_scale_shape)
+                    l['bn_scale']=tf.ones([batch_size] + permute(l.bn_scale_shape))
                 if l.bn_offset_shape is not None:
-                    l['bn_offset'] = tf.zeros([batch_size] + l.bn_offset_shape)
+                    l['bn_offset'] = tf.zeros([batch_size] + permute(l.bn_offset_shape))
 
         self.weights = weights
         self.layers = layers
@@ -148,7 +157,7 @@ class Hypernetwork():
 
         with tf.device(next(self.gpus)):
             # create the target resnet network, with `self.weights` - the weights generated from this hypernetwork
-            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,order='NHWC',batch_type='BATCH_TYPE1')
+            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights)
 
             # add accuracy loss ops
             accuracy_loss = tf.reduce_mean(target.loss)
@@ -162,7 +171,7 @@ class Hypernetwork():
 
             diversity_loss = tf.identity(- 1 * entropy_estimate, name='diversity_loss')
 
-            loss = tf.identity(self.hnet_hparams.lamBda* accuracy_loss + diversity_loss, name='loss')
+            loss = tf.identity(self.hnet_hparams.lamBda * accuracy_loss + diversity_loss, name='loss')
 
             self.flattened_network = flattened_network
             self.target = target
@@ -175,11 +184,11 @@ class Hypernetwork():
             self.loss = loss
 
     def __AddOptimizationOps(self):
-        with tf.device(self.cpu):
-            learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
-            learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
-            update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
-            steps_before_train_step = [update_learning_rate]
+        # with tf.device(self.cpu):
+        learning_rate = tf.Variable(self.hnet_hparams.learning_rate, dtype=tf.float32, trainable=False, name='learning_rate')
+        learning_rate_rate = tf.Variable(self.hnet_hparams.learning_rate_rate, dtype=tf.float32, trainable=False,name='learning_rate_rate')
+        update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
+        steps_before_train_step = [update_learning_rate]
 
         #optimizer = tf.train.MomentumOptimizer(learning_rate,self.hnet_hparams.momentum) # TODO
         optimizer = tf.train.AdamOptimizer(learning_rate)
@@ -206,6 +215,13 @@ class Hypernetwork():
         self.initializer = initializer
         self.saver = saver
 
+        tf.summary.scalar('loss', self.loss)
+        tf.summary.scalar('accuracy_loss', self.accuracy_loss)
+        tf.summary.scalar('accuracy', self.accuracy)
+        tf.summary.scalar('learning_rate', self.learning_rate)
+        tf.summary.scalar('learning_rate_adam', self.learning_rate_adam)
+        self.summary_op = tf.summary.merge_all()
+
     def TrainStep(self,sess:tf.Session,additional_tensors_to_run=[]):
         z = self.SampleInput(self.hnet_hparams.batch_size)
         tensors_to_run = [self.train_step,self.step_counter]+additional_tensors_to_run
@@ -216,8 +232,9 @@ class Hypernetwork():
         else:
             return tuple(out)
 
-    def Train(self, sess:tf.Session, x_validation, y_validation, max_steps, logger, initialize_from_checkpoint=False, checkpoint_file_name:str=None, restore_message:str=None):
+    def Train(self, sess:tf.Session, x_validation, y_validation, max_steps, logger,writer, initialize_from_checkpoint=False, checkpoint_file_name:str=None, restore_message:str=None,log_interval:int=100):
         any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
+        t = time()
         if initialize_from_checkpoint:
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
         else:
@@ -225,6 +242,10 @@ class Hypernetwork():
         validation_hnet = Hypernetwork(x_validation, y_validation, 'EVAL', self.general_params, self.hnet_hparams, self.target_hparams, self.image_params, self.devices, self.graph)
         sess.run(tf.variables_initializer([validation_hnet.is_training,validation_hnet.step_counter]))
         while i<=max_steps:
+            if i % log_interval == 0:
+                t_elapsed = (time() - t) / log_interval
+                i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
+                logger.info('step {:d}: accuracy={:.4f} lr={:.8f} time={:.4f}'.format(i, accuracy, self.get_learning_rate(), t_elapsed))
             if (i % 1000 == 0):
                 weights = []
                 accuracy = []
@@ -261,6 +282,9 @@ class Hypernetwork():
                 logger.info("step {:d}: accuracy={:.4f} lr={:.6f}".format(i, accuracy, self.get_learning_rate()))
                 logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
+                writer.add_summary(summary, i)
+                writer.flush()
+                t = time()
             else:
                 i = self.TrainStep(sess)
 

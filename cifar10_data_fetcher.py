@@ -102,11 +102,11 @@ class Cifar10DataFetcher():
                     })
                 image = tf.decode_raw(features['image'], tf.uint8)
                 image = tf.reshape(image, [params.number_of_channels,params.image_size,params.image_size])
-                if order=='NHWC':
-                    image = tf.transpose(image, [1, 2, 0])
+                image = tf.transpose(image, [1, 2, 0]) # to NHWC
                 image = tf.cast(image,tf.float32)
                 image = preprocess_image(image, is_training)
-
+                if order=='NCHW':
+                    image = tf.transpose(image, [2, 0, 1]) # to NCHW
                 label = tf.one_hot(tf.cast(features['label'], tf.int32),params.num_classes)
                 return image, label
 
@@ -134,8 +134,10 @@ class Cifar10DataFetcher():
 
             if noise_batch_size is not None:
                 def reshape(images, labels):
-                    images = tf.reshape(images, [noise_batch_size, batch_size, params.image_size, params.image_size,
-                                                 params.number_of_channels])
+                    if order == 'NHWC':
+                        images = tf.reshape(images, [noise_batch_size, batch_size, params.image_size, params.image_size, params.number_of_channels])
+                    if order == 'NCHW':
+                        images = tf.reshape(images, [noise_batch_size, batch_size, params.number_of_channels, params.image_size, params.image_size])
                     labels = tf.reshape(labels, [noise_batch_size, batch_size, params.num_classes])
                     return images, labels
                 dataset = dataset.map(lambda images,labels: reshape(images,labels))

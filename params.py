@@ -41,7 +41,7 @@ class Cifar10Params(DataParams):
 
         self.path = 'data/cifar10/'
 
-
+        self.order = 'NCHW'  # 'NHWC', 'NCHW'
 
 class ResNetHyperParameters():
     def __init__(self):
@@ -81,6 +81,8 @@ class ResNetCifar10HyperParameters(ResNetHyperParameters):
 
         self.momentum = 0.9
         self.learning_rate = 0.1
+
+        self.batch_type = 'BATCH_TYPE1'
 
 
 class HypernetworkHyperParameters():

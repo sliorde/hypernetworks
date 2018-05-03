@@ -5,7 +5,7 @@ from logging import Logger
 from resnet_weights import ResnetWeights
 
 class Resnet():
-    def __init__(self, input, hparams:ResNetHyperParameters, image_params:DataParams, labels=None, train=False, weights:ResnetWeights=None, order='NCHW', batch_type='BATCH_TYPE1', noise_batch_size=1, graph=None):
+    def __init__(self, input, hparams:ResNetHyperParameters, image_params:DataParams, labels=None, train=False, weights:ResnetWeights=None, noise_batch_size=1, graph=None):
         """
         a resnet model that can be trained and used for inference. The weight for the model can either be created as variables from within this object, or given from outside (for example, from a hypernetwork generator)
         Args:
@@ -16,13 +16,12 @@ class Resnet():
             train: whether to add training ops
             weights: optional - a `ResnetWeights` object with all the weights for the resnet. if `None`, the new weights will be initialized
             noise_batch_size:
-            order: either `'NCHW'` or `'NHWC'`
             batch_type: one of `'BATCH_TYPE1'`,`'BATCH_TYPE2'`,`'BATCH_TYPE3'`,`'BATCH_TYPE4'`. In the first option, the batch dimension of the weights and the images will be shared. In the second option, the imagse will be two batch dimensions: one for noise and one for images, and the noise batch dimension will be shared with the weights. In the third option, the images and the weights will both have a non-shared batch dimension. In the fourth option - images will have a batch dimension, but weight will not.
             noise_batch_size: this will be ignored, unless `weights` is `None` and `batch_type` is `'BATCH_TYPE3'`, in which case it will determine the batch size for the weights.
             graph:
         """
-        self.order = order
-        self.batch_type = batch_type
+        self.order = image_params.order
+        self.batch_type = hparams.batch_type
         self.labels = labels
         self.input = input
 
@@ -30,19 +29,19 @@ class Resnet():
 
         self.image_params = image_params
 
-        if order not in {'NCHW','NHWC'}:
+        if self.order not in {'NCHW','NHWC'}:
             raise ValueError("invalid value for `order`")
 
-        if batch_type.upper() not in {'BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4'}:
+        if self.batch_type.upper() not in {'BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4','BATCH_TYPE5'}: # TODO clean up
             raise ValueError("invalid value for `batch_type`")
 
         if graph is None:
             graph = tf.get_default_graph()
         with graph.as_default():
             if weights is None: # if weights were not supplied, create new variables
-                if batch_type in ['BATCH_TYPE1','BATCH_TYPE2']:
+                if self.batch_type in ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE5']: # TODO clean up
                     noise_batch_size = input.shape[0]
-                elif batch_type=='BATCH_TYPE4':
+                elif self.batch_type=='BATCH_TYPE4':
                     noise_batch_size = None
                 weights = self.__CreateWeightVariables(noise_batch_size)
             self.weights = weights
@@ -95,7 +94,7 @@ class Resnet():
             x = tf.reduce_mean(x, [-2, -1])
 
         x = tf.expand_dims(x, -1)
-        if self.batch_type=='BATCH_TYPE1':
+        if self.batch_type=='BATCH_TYPE1' or self.batch_type=='BATCH_TYPE5': # TODO clean up
             w = weights['final_layer']['w']
         elif self.batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
             w = tf.expand_dims(weights['final_layer']['w'],1)

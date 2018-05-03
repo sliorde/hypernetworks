@@ -1,4 +1,5 @@
 import os
+import sys
 import types
 import numpy as np
 import tensorflow as tf
@@ -153,7 +154,7 @@ def ConvType1(x, w, stride, order):
     #     x = tf.reshape(x, [x_sz[0], x_sz[1], w_sz[4], x_sz[2]//stride, x_sz[3]//stride])  # [batch,channels,filters,width/stride,height/stride]
     #     x = tf.reduce_sum(x, axis=1)  # [batch,filters,width,height]
     # return x
-    return tf.squeeze(tf.map_fn(lambda u: Conv2D(tf.expand_dims(u[0],0), u[1], stride, order),elems=[x, w], dtype=tf.float32),1)
+    return tf.squeeze(tf.map_fn(lambda u: Conv2D(tf.expand_dims(u[0],0), u[1], stride, order), elems=[x, w], dtype=tf.float32), 1)
 
 def ConvType2(x, w, stride, order):
     return tf.map_fn(lambda u: Conv2D(u[0],u[1],stride,order), elems=[x, w],dtype=tf.float32)
@@ -161,7 +162,7 @@ def ConvType2(x, w, stride, order):
 def ConvType4(x, w, stride, order):
     return Conv2D(x, w, stride,order)
 
-def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=None):
+def ConvBN_old(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=None):
     """
     perform convolution and "batch norm", where the batch norm does not calculate means and variances
     Args:
@@ -186,6 +187,27 @@ def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=No
     conv_func = conv_func[batch_type]
 
     return tf.identity(conv_func(x, w, stride, order) * scale + offset, name)
+
+def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=None):
+    if batch_type in ['BATCH_TYPE2','BATCH_TYPE3']:
+        scale = tf.expand_dims(scale, 1)
+        offset = tf.expand_dims(offset, 1)
+
+    conv_func = [ConvType1,ConvType2,ConvType2,ConvType4]
+    batch_type_index = ['BATCH_TYPE1','BATCH_TYPE2','BATCH_TYPE3','BATCH_TYPE4','BATCH_TYPE5'].index(batch_type) # TODO clean up
+    if batch_type_index == 4: batch_type_index = 0 # TODO clean up
+    conv_func = conv_func[batch_type_index]
+
+    x = conv_func(x, w, stride, order)
+
+    # TODO clean up
+    if batch_type == 'BATCH_TYPE5':
+        # TODO tf.nn.moments() is slow, use tf.nn.fused_batch_norm() with cudnn
+        axes = [0, 2, 3] if order == 'NCHW' else [0, 1, 2]
+        means, variances = tf.map_fn(lambda u: tf.nn.moments(tf.expand_dims(u,0), axes=axes, keep_dims=True), elems=x, dtype=(tf.float32, tf.float32))
+        x = tf.squeeze(tf.map_fn(lambda u: tf.nn.batch_normalization(x=tf.expand_dims(u[0],0), scale=u[1], offset=u[2], mean=u[3], variance=u[4], variance_epsilon=1e-5), elems=[x, scale, offset, means, variances], dtype=tf.float32), 1)
+
+    return tf.identity(x, name)
 
 def OptimizerReset(optimizer, graph=None, name=None):
     """
@@ -214,7 +236,7 @@ def GetLogger(log_file_mode='w',log_file_path='log.txt'):
     file_handler = logging.FileHandler(log_file_path, mode=log_file_mode)
     file_handler.setFormatter(log_format)
     logger.addHandler(file_handler)
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(log_format)
     logger.addHandler(console_handler)
     logger.setLevel(logging.INFO)
