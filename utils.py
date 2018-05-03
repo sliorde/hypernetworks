@@ -1,4 +1,5 @@
 import os
+import sys
 import types
 import numpy as np
 import tensorflow as tf
@@ -231,7 +232,7 @@ def GetLogger(log_file_mode='w',log_file_path='log.txt'):
     file_handler = logging.FileHandler(log_file_path, mode=log_file_mode)
     file_handler.setFormatter(log_format)
     logger.addHandler(file_handler)
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(log_format)
     logger.addHandler(console_handler)
     logger.setLevel(logging.INFO)
