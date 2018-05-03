@@ -90,27 +90,31 @@ def AddBacthNormalizationOps(input, is_training, train_BN_params, batchnorm_deca
         a tuple (output_layer, (means,variances,offsets,scales))
     """
     batch_means, batch_variances = tf.nn.moments(input, list(np.arange(0, len(input.shape) - 1)),keep_dims=False)
-    offsets = tf.get_variable(name=GiveName(name,'_offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
-    scales = tf.get_variable(name=GiveName(name,'_scales'), shape=batch_variances.shape,initializer=tf.ones_initializer(),trainable=train_BN_params)
-    ema = tf.train.ExponentialMovingAverage(decay=batchnorm_decay, name=GiveName(name, '_ema'))
-    ema_ops = ema.apply([batch_means,batch_variances])
+    offsets = tf.get_variable(name=GiveName(name,'offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
+    scales = tf.get_variable(name=GiveName(name,'scales'), shape=batch_variances.shape,initializer=tf.ones_initializer(),trainable=train_BN_params)
+    ema_average_batch_means = tf.get_variable(name=GiveName(name,'ema'),shape=batch_means.shape,initializer=tf.zeros_initializer())
+    ema_average_batch_variances = tf.get_variable(name=GiveName(name, 'ema'), shape=batch_variances.shape,initializer=tf.zeros_initializer())
+    ema_batch_means_apply = tf.assign_sub(ema_average_batch_means,(ema_average_batch_means - batch_means) * batchnorm_decay)
+    ema_batch_variances_apply = tf.assign_sub(ema_average_batch_variances,(ema_average_batch_variances - batch_variances) * batchnorm_decay)
     def ApplyEmaUpdate():
-        with tf.control_dependencies([ema_ops]):
+        with tf.control_dependencies([ema_batch_means_apply,ema_batch_variances_apply]):
             return tf.identity(batch_means), tf.identity(batch_variances)
     if isinstance(is_training,bool):
         if is_training:
             means, variances = ApplyEmaUpdate()
         else:
-            means, variances = ema.average(batch_means), ema.average(batch_variances)
+            means, variances = ema_average_batch_means, ema_average_batch_variances
     else: # in this case, is_training is a tf.Tensor of type tf.bool
-        means, variances = tf.cond(is_training, lambda: ApplyEmaUpdate(),lambda: (ema.average(batch_means), ema.average(batch_variances)))
+        means, variances = tf.cond(is_training, lambda: ApplyEmaUpdate(),lambda: (ema_average_batch_means, ema_average_batch_variances))
     return tf.nn.batch_normalization(input, means, variances, offsets, scales,zero_fixer,name), (means,variances,offsets,scales)
 
 def GiveName(name:str,more_info:str):
     if name is None:
         return None
+    elif more_info is None:
+        return name
     else:
-        return name+more_info
+        return name+'_'+more_info
 
 
 def MaxPool(x,size,stride,order='NHWC'):
@@ -230,7 +234,7 @@ def CreateDir(dir):
 
 def CreateOutputDir(prefix, filename):
     exp_id = os.path.splitext(os.path.basename(filename))[0]
-    run_name = datetime.now().strftime('%Y:%m:%d:%H:%M:%S')
+    run_name = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
     return CreateDir(os.path.join(prefix, exp_id, run_name))
 
 def GetAdamLR(adam):

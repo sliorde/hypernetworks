@@ -58,12 +58,15 @@ class Cifar10DataFetcher():
 
         # choose correct path for images, between training, validation and test
         if mode.upper() in ['TRAIN','TRAINING']:
+            mode = 'TRAIN'
             path = os.path.join(params.path,'train.tfrecords')
             is_training = True
-        elif mode.uppper() in ['VALIDATE', 'VALIDATION', 'VALIDATING']:
+        elif mode.upper() in ['VALIDATE', 'VALIDATION', 'VALIDATING']:
+            mode = 'VALIDATION'
             path = os.path.join(params.path, 'validation.tfrecords')
             is_training = False
         elif mode.upper() in ['EVALUATE', 'EVAL', 'EVALUATION', 'EVALUATING', 'TEST', 'TESTING']:
+            mode = 'TEST'
             path = os.path.join(params.path, 'test.tfrecords')
             is_training = False
         else:
@@ -82,8 +85,7 @@ class Cifar10DataFetcher():
         with self._graph.as_default():
             dataset = tf.data.TFRecordDataset(file_names)
 
-            if is_training:
-                dataset = dataset.repeat()
+            dataset = dataset.repeat()
 
             def preprocess_image(image, is_training):
                 ##TODO: make this work for NCHW as well
@@ -122,7 +124,12 @@ class Cifar10DataFetcher():
             else:
                 total_batch_size = batch_size*noise_batch_size
 
-            # TODO: on validation_set or test_set, we should not drop remainder!
+            if mode == 'VALIDATION':
+                set_size = params.validation_set_size
+            else:
+                set_size = params.test_set_size
+            if (set_size % total_batch_size) != 0:
+                raise ValueError("in modes 'VALIDATION' and 'TEST', total batch size should divide set size")
             dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(total_batch_size))
 
             if noise_batch_size is not None:
@@ -132,6 +139,7 @@ class Cifar10DataFetcher():
                     labels = tf.reshape(labels, [noise_batch_size, batch_size, params.num_classes])
                     return images, labels
                 dataset = dataset.map(lambda images,labels: reshape(images,labels))
+
             self._next = dataset.make_one_shot_iterator().get_next()
             self.image, self.label = self._next
 
