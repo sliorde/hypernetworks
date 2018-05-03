@@ -242,10 +242,6 @@ class Hypernetwork():
         validation_hnet = Hypernetwork(x_validation, y_validation, 'EVAL', self.general_params, self.hnet_hparams, self.target_hparams, self.image_params, self.devices, self.graph)
         sess.run(tf.variables_initializer([validation_hnet.is_training,validation_hnet.step_counter]))
         while i<=max_steps:
-            if i % log_interval == 0:
-                t_elapsed = (time() - t) / log_interval
-                i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
-                logger.info('step {:d}: accuracy={:.4f} lr={:.8f} time={:.4f}'.format(i, accuracy, self.get_learning_rate(), t_elapsed))
             if (i % 1000 == 0):
                 weights = []
                 accuracy = []
@@ -277,10 +273,11 @@ class Hypernetwork():
                 logger.info("estimated total loss: {:.4f}".format(total_loss))
                 logger.info("-----------------------------\n\n")
 
-            if i%100 == 0:
-                i, accuracy, accuracy_loss, diversity_loss, total_loss = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss])
-                logger.info("step {:d}: accuracy={:.4f} lr={:.6f}".format(i, accuracy, self.get_learning_rate()))
-                logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
+            if i % log_interval == 0:
+                t_elapsed = (time() - t) / log_interval
+                i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
+                logger.info('step {:d}: lr={:.8f} time={:.4f}'.format(i, self.get_learning_rate(), t_elapsed))
+                logger.info('      (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
                 writer.add_summary(summary, i)
                 writer.flush()
