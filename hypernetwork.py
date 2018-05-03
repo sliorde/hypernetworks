@@ -3,6 +3,7 @@ import tensorflow as tf
 from itertools import cycle
 from logging import Logger
 import os
+from time import time
 
 from utils import MultiLayerPerceptron, OptimizerReset, GetDevices, GetLogger, GetAdamLR, PrintParams
 from params import GeneralParameters, HypernetworkHyperParameters, ResNetHyperParameters, DataParams, Cifar10Params,ResNetCifar10HyperParameters
@@ -18,7 +19,7 @@ LEARNING_RATE_RATE_FILE_NAME = 'lrr.txt'
 update_dict = {'learning_rate':LEARNING_RATE_FILE_NAME,'learning_rate_rate':LEARNING_RATE_RATE_FILE_NAME}
 
 class Hypernetwork():
-    def __init__(self, x,y, mode:str='EVAL', general_params=GeneralParameters(), hnet_hparams=HypernetworkHyperParameters(), target_hparams:ResNetHyperParameters=ResNetCifar10HyperParameters(), image_params:DataParams=Cifar10Params(), devices=None,graph=None):
+    def __init__(self, x, y, mode:str='EVAL', general_params=GeneralParameters(), hnet_hparams=HypernetworkHyperParameters(), target_hparams:ResNetHyperParameters=ResNetCifar10HyperParameters(), image_params:DataParams=Cifar10Params(), devices=None, graph=None):
         """
 
         Args:
@@ -78,6 +79,12 @@ class Hypernetwork():
         # create an empty ResnetWeights object, which will populated by the hypernet
         weights = ResnetWeights(self.target_hparams,self.image_params)
 
+        # layout
+        if self.image_params.order == 'NCHW':
+            permute = lambda u: [u[2],u[0],u[1]]
+        else:
+            permute = lambda u:u
+
         # the list of all trainable weight layers in the resnet, to be populated
         layers = list(weights.WeightedLayerIterator())
         num_of_weights_per_filter = {}
@@ -122,9 +129,9 @@ class Hypernetwork():
                     l.b = layer_output[:,-1,:]
                 # TODO: change this if want to generate also BN!!
                 if l.bn_scale_shape is not None:
-                    l.bn_scale = tf.ones([batch_size] + l.bn_scale_shape)
+                    l.bn_scale = tf.ones([batch_size] + permute(l.bn_scale_shape))
                 if l.bn_offset_shape is not None:
-                    l.bn_offset = tf.zeros([batch_size] + l.bn_offset_shape)
+                    l.bn_offset = tf.zeros([batch_size] + permute(l.bn_offset_shape))
 
         # retrieve all generated weights as a (batch of ) flattened vector
         with tf.device(self.cpu):
@@ -148,7 +155,7 @@ class Hypernetwork():
 
         with tf.device(next(self.gpus)):
             # create the target resnet network, with `self.weights` - the weights generated from this hypernetwork
-            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,order='NHWC',batch_type='BATCH_TYPE1')
+            target = Resnet(self.x,self.target_hparams,self.image_params,self.y,weights=self.weights,batch_type='BATCH_TYPE1')
 
             # add accuracy loss ops
             accuracy_loss = tf.reduce_mean(target.loss)
@@ -218,21 +225,24 @@ class Hypernetwork():
         else:
             return tuple(out)
 
-    def Train(self,sess:tf.Session,max_steps,logger,writer,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None):
+    def Train(self,sess:tf.Session,max_steps,logger,writer,initialize_from_checkpoint=False,checkpoint_file_name:str=None,restore_message:str=None,log_interval:int=100):
         # TODO: add validation steps!s
         any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
+        t = time()
         if initialize_from_checkpoint:
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
         else:
             i = self.Initialize(sess)
-        while i<=max_steps:
-            if i%100 == 0:
+        while i <= max_steps:
+            if i % log_interval == 0:
+                t_elapsed = (time() - t) / log_interval
                 i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
-                logger.info("step {:d}: accuracy={:.4f} lr={:.8f}".format(i, accuracy, self.get_learning_rate()))
+                logger.info('step {:d}: accuracy={:.4f} lr={:.8f} time={:.4f}'.format(i, accuracy, self.get_learning_rate(), t_elapsed))
                 logger.info('  (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
                 writer.add_summary(summary, i)
                 writer.flush()
+                t = time()
             else:
                 i = self.TrainStep(sess)
 
