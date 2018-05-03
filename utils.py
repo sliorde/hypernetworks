@@ -197,11 +197,10 @@ def ConvBN(x, w, stride, scale, offset, order, batch_type='BATCH_TYPE1', name=No
 
     # TODO clean up
     if batch_type == 'BATCH_TYPE5':
-        _BATCH_NORM_EPSILON = 1e-5
+        # TODO tf.nn.moments() is slow, use tf.nn.fused_batch_norm() with cudnn
         axes = [0, 2, 3] if order == 'NCHW' else [0, 1, 2]
-        # TODO tf.nn.moments() is slow in NCHW layout
         means, variances = tf.map_fn(lambda u: tf.nn.moments(tf.expand_dims(u,0), axes=axes, keep_dims=True), elems=x, dtype=(tf.float32, tf.float32))
-        x = tf.squeeze(tf.map_fn(lambda u: tf.nn.batch_normalization(tf.expand_dims(u[0],0), u[1], u[2], u[3], u[4], _BATCH_NORM_EPSILON), elems=[x, means, variances, scale, offset], dtype=tf.float32), 1)
+        x = tf.squeeze(tf.map_fn(lambda u: tf.nn.batch_normalization(x=tf.expand_dims(u[0],0), scale=u[1], offset=u[2], mean=u[3], variance=u[4], variance_epsilon=1e-5), elems=[x, scale, offset, means, variances], dtype=tf.float32), 1)
 
     return tf.identity(x, name)
 
