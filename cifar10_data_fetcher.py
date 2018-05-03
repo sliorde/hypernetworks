@@ -45,7 +45,7 @@ class Cifar10DataFetcher():
     a wrapper for a tf.data.Dataset object that can feed Cifar10 images.
     An instance will have the properties `image` and `labels` which are the tensors for a batch of (normalized) images and one-hot labels.
     """
-    def __init__(self, mode: str, params:Cifar10Params=Cifar10Params(), batch_size: int = None, noise_batch_size:int = None,order='NCHW'):
+    def __init__(self, mode: str, params:Cifar10Params=Cifar10Params(), batch_size: int = None, noise_batch_size:int = None):
         """
 
         Args:
@@ -71,6 +71,8 @@ class Cifar10DataFetcher():
             is_training = False
         else:
             raise ValueError('wrong value for `mode`')
+
+        order = params.order
 
         self._graph = tf.get_default_graph()
 
