@@ -72,7 +72,7 @@ class Hypernetwork():
                 self.__AddOptimizationOps()
             self.initializer = tf.variables_initializer(self.graph.get_collection('variables'),name='initializer')
 
-        self.graph.finalize()
+        # self.graph.finalize()
 
 
     def __AddGeneratorOps(self):
@@ -90,10 +90,10 @@ class Hypernetwork():
             permute = lambda u:u
 
         # the list of all trainable weight layers in the resnet, to be populated
-        layers = list(weights.WeightedLayerIterator())
+        target_layers = list(weights.WeightedLayerIterator())
         num_of_weights_per_filter = {}
         num_of_filters = {}
-        for l in layers:
+        for l in target_layers:
             num_of_weights_per_filter[l.name] = np.prod(l.w_shape[:(-1)])
             num_of_weights_per_filter[l.name] += 1 if l.b_shape is not None else 0
             num_of_filters[l.name] = l.w_shape[-1]
@@ -103,26 +103,27 @@ class Hypernetwork():
             is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
 
         # use this function to construct MLPs for extractor and weight generators
-        mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)[0]
+        mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)
 
         # extractor
         with tf.device(next(self.gpus)):
-            e_layer_outputs = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
+            e_layer_outputs,e_layers,_ = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
             codes = {}
-            for i,l in enumerate(layers):
+            codes_layer = {}
+            for i,l in enumerate(target_layers):
                 code_size = self.hnet_hparams.code_size_formula(num_of_weights_per_filter[l.name],num_of_filters[l.name])
-                codes[l.name] = mlp_builder(e_layer_outputs[-1],[num_of_filters[l.name]*code_size],'codes{:d}'.format(i))
+                codes[l.name],codes_layer[l.name],_ = mlp_builder(e_layer_outputs[-1],[num_of_filters[l.name]*code_size],'codes{:d}'.format(i))
                 codes[l.name] = tf.reshape(codes[l.name],[-1,num_of_filters[l.name],code_size],'codes{:d}'.format(i))
 
         # weight generators. We run over all layers in the target resnet, and populate them with the output of a weight generator
         wg_layer_outputs={}
-        for i,l in enumerate(layers):
+        wg_layer_layers={}
+        for i,l in enumerate(target_layers):
             with tf.device(next(self.gpus)):
 
                 # create weight generator
                 layer_widths = [self.hnet_hparams.wg_hidden_layer_size_formula(num_of_weights_per_filter[l.name],num_of_filters[l.name])]*self.hnet_hparams.wg_number_of_hidden_layers
-                wg_layer_outputs_ = mlp_builder(codes[l.name],layer_widths + [num_of_weights_per_filter[l.name]],'weight_generator{:d}'.format(i))
-                wg_layer_outputs[l.name] = wg_layer_outputs_
+                wg_layer_outputs[l.name],wg_layer_layers[l.name],_ = mlp_builder(codes[l.name],layer_widths + [num_of_weights_per_filter[l.name]],'weight_generator{:d}'.format(i))
                 layer_output = tf.transpose(wg_layer_outputs[l.name][-1],[0,2,1])
 
                 # populate weight of target resnet. important: these assignments are references, so by assigning to `l['w']` we also changing `weights`
@@ -138,12 +139,15 @@ class Hypernetwork():
                     l['bn_offset'] = tf.zeros([batch_size] + permute(l.bn_offset_shape))
 
         self.weights = weights
-        self.layers = layers
+        self.target_layers = target_layers
         self.step_counter = step_counter
         self.batch_size = batch_size
         self.e_layer_outputs = e_layer_outputs
+        self.e_layers = e_layers
         self.codes = codes
+        self.codes_layer = codes_layer
         self.wg_layer_outputs = wg_layer_outputs
+        self.wg_layer_layers = wg_layer_layers
 
         return weights
 
@@ -220,6 +224,10 @@ class Hypernetwork():
         tf.summary.scalar('accuracy', self.accuracy)
         tf.summary.scalar('learning_rate', self.learning_rate)
         tf.summary.scalar('learning_rate_adam', self.learning_rate_adam)
+        tf.summary.histogram('generator_pre_activations',tf.concat([tf.reshape(a, [-1]) for a in tf.get_collection('pre_activations')], 0))
+        tf.summary.histogram('generator_activations',tf.concat([tf.reshape(a,[-1]) for a in tf.get_collection('activations')],0))
+        for a in self.weights.WeightedLayerIterator():
+            tf.summary.histogram(a.name,a['w'])
         self.summary_op = tf.summary.merge_all()
 
     def TrainStep(self,sess:tf.Session,additional_tensors_to_run=[]):
@@ -256,12 +264,10 @@ class Hypernetwork():
                         a,b = sess.run([validation_hnet.accuracy, validation_hnet.accuracy_loss],validation_hnet.weights.CreateFeedDict(weights[-1]))
                         accuracy.append(a)
                         accuracy_loss.append(b)
-                    diversity_loss = sess.run(validation_hnet.diversity_loss,{self.flattened_network:np.concatenate(flattened_network,0)})
+                diversity_loss = sess.run(validation_hnet.diversity_loss,{self.flattened_network:np.concatenate(flattened_network,0),validation_hnet.batch_size:int(validation_hnet.hnet_hparams.validation_samples)})
                 accuracy = np.mean(accuracy)
                 accuracy_loss = np.mean(accuracy_loss)
                 total_loss = sess.run(self.loss,{self.accuracy_loss:accuracy_loss,self.diversity_loss:diversity_loss})
-
-
 
                 logger.info("\n\n\n\n")
                 logger.info("===================")
