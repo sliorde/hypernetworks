@@ -60,15 +60,19 @@ def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=
             b = GetBiasVariable([widths[i]], GiveName(name,'layer{:d}_biases'.format(i)), scale)
         layers.append((w, b))
         pre_activations = tf.add(tf.tensordot(layer_outputs[i - 1], w, [[-1], [-2]]), b, GiveName(name,'layer{:d}_pre_activations'.format(i)))
+        tf.add_to_collection("pre_activations",pre_activations)
         if i<(len(widths)-1):
             layer_output = activation(pre_activations, GiveName(name,'layer{:d}_activations'.format(i)))
+            tf.add_to_collection("activations", layer_output)
         else:
             if activation_on_last_layer is False:
                 layer_output = pre_activations
             elif activation_on_last_layer is True:
                 layer_output = activation(pre_activations,GiveName(name,'layer{:d}_activations'.format(i)))
+                tf.add_to_collection("activations", layer_output)
             else:
                 layer_output = activation_on_last_layer(pre_activations, GiveName(name,'layer{:d}_activations'.format(i)))
+                tf.add_to_collection("activations", layer_output)
         if where_to_batch_norm[i]:
             layer_output,params = AddBacthNormalizationOps(layer_output,is_training,train_batch_norm,batchnorm_decay,zero_fixer,GiveName(name,'layer{:d}_batchnorm'.format(i)))
             batch_norm_params.append(params)
