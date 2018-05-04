@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --job-name="hyper_4"
+#SBATCH --output="train_cifar10_resnet32_4.%j.%N.out"
+#SBATCH --partition=gpu-shared
+#SBATCH --ntasks-per-node=6
+#SBATCH --export=ALL
+#SBATCH --gres=gpu:p100:1
+#SBATCH -t 47:55:00
+#SBATCH -A cla179
+
+cd /oasis/scratch/comet/mkandes/temp_project/singularity/images/
+module load singularity
+singularity exec tensorflow-gpu.img /home/enijkamp/Dropbox/hypernetworks/job.sh train_cifar10_resnet32_4.py

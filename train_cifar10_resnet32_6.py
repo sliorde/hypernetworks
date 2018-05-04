@@ -1,7 +1,5 @@
 # experiment:
-# - increase lr decay, lambda
-# - batch-norm after convolution (resnet v1)
-# - NCHW
+# - as (2), lower learning rate, lower decay
 
 import os
 
@@ -26,8 +24,8 @@ image_params = Cifar10Params()
 
 # override
 hparams.initialization_std = 1e-3
-hparams.learning_rate = 1e-6
-hparams.learning_rate_rate = 0.9999
+hparams.learning_rate = 5e-7
+hparams.learning_rate_rate = 0.99998
 hparams.lamBda = 1e8
 
 target_hparams.batch_type = 'BATCH_TYPE5'
