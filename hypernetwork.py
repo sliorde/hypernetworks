@@ -107,23 +107,25 @@ class Hypernetwork():
 
         # extractor
         with tf.device(next(self.gpus)):
-            e_layer_outputs,e_layers,_ = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
+            e_layer_outputs,e_layers,e_bn = mlp_builder(self.z, self.hnet_hparams.e_layer_sizes,'extractor')
             codes = {}
             codes_layer = {}
+            codes_bn = {}
             for i,l in enumerate(target_layers):
                 code_size = self.hnet_hparams.code_size_formula(num_of_weights_per_filter[l.name],num_of_filters[l.name])
-                codes[l.name],codes_layer[l.name],_ = mlp_builder(e_layer_outputs[-1],[num_of_filters[l.name]*code_size],'codes{:d}'.format(i))
+                codes[l.name],codes_layer[l.name],codes_bn[l.name] = mlp_builder(e_layer_outputs[-1],[num_of_filters[l.name]*code_size],'codes{:d}'.format(i))
                 codes[l.name] = tf.reshape(codes[l.name],[-1,num_of_filters[l.name],code_size],'codes{:d}'.format(i))
 
         # weight generators. We run over all layers in the target resnet, and populate them with the output of a weight generator
         wg_layer_outputs={}
-        wg_layer_layers={}
+        wg_layers={}
+        wg_bn = {}
         for i,l in enumerate(target_layers):
             with tf.device(next(self.gpus)):
 
                 # create weight generator
                 layer_widths = [self.hnet_hparams.wg_hidden_layer_size_formula(num_of_weights_per_filter[l.name],num_of_filters[l.name])]*self.hnet_hparams.wg_number_of_hidden_layers
-                wg_layer_outputs[l.name],wg_layer_layers[l.name],_ = mlp_builder(codes[l.name],layer_widths + [num_of_weights_per_filter[l.name]],'weight_generator{:d}'.format(i))
+                wg_layer_outputs[l.name],wg_layers[l.name],wg_bn[l.name] = mlp_builder(codes[l.name],layer_widths + [num_of_weights_per_filter[l.name]],'weight_generator{:d}'.format(i))
                 layer_output = tf.transpose(wg_layer_outputs[l.name][-1],[0,2,1])
 
                 # populate weight of target resnet. important: these assignments are references, so by assigning to `l['w']` we also changing `weights`
@@ -144,10 +146,13 @@ class Hypernetwork():
         self.batch_size = batch_size
         self.e_layer_outputs = e_layer_outputs
         self.e_layers = e_layers
+        self.e_bn = e_bn
         self.codes = codes
         self.codes_layer = codes_layer
+        self.codes_bn = codes_bn
         self.wg_layer_outputs = wg_layer_outputs
-        self.wg_layer_layers = wg_layer_layers
+        self.wg_layers = wg_layers
+        self.wg_bn = wg_bn
 
         return weights
 
@@ -242,6 +247,12 @@ class Hypernetwork():
 
     def Train(self, sess:tf.Session, x_validation, y_validation, max_steps, logger,writer, initialize_from_checkpoint=False, checkpoint_file_name:str=None, restore_message:str=None,log_interval:int=100):
         any(PrintParams(logger, params) for params in [self.general_params, self.image_params, self.target_hparams, self.hnet_hparams])
+        logger.info('\n\n')
+        logger.info('size of generator: {:d}'.format(self.NumberOfParameters()))
+        logger.info('size of generator (not including batchnorm): {:d}'.format(self.NumberOfParameters(False)))
+        logger.info('size of target: {:d}'.format(self.target.NumberOfWeights()))
+        logger.info('size of target  (not including batchnorm): {:d}'.format(self.target.NumberOfWeights(False)))
+        logger.info('\n\n')
         t = time()
         if initialize_from_checkpoint:
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
@@ -381,3 +392,22 @@ class Hypernetwork():
 
     def SaveToCheckpoint(self,sess:tf.Session,filename):
         self.saver.save(sess,filename,global_step=self.GetStepCounter(sess))
+
+    def NumberOfParameters(self, with_batchnorm=True):
+        count_list = lambda l: np.sum([np.prod(var.get_shape().as_list()) for tup in l for var in tup])
+        count_dict = lambda d: np.sum([count_list(l) for l in d.values()])
+        tot = 0
+        tot += count_list(self.e_layers)
+        tot += count_dict(self.codes_layer)
+        tot += count_dict(self.wg_layers)
+
+        if with_batchnorm:
+            # this implementation is tied to the output format of the function `AddBacthNormalizationOps`
+            count_list = lambda l: np.sum([np.prod(var.get_shape().as_list()) for tup in l for var in tup[2:]])
+            count_dict = lambda d: np.sum([count_list(l) for l in d.values()])
+            tot += count_list(self.e_bn)
+            tot += count_dict(self.codes_bn)
+            tot += count_dict(self.wg_bn)
+
+        return tot
+

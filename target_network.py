@@ -203,3 +203,6 @@ class Resnet():
         weights['final_layer']['b'] = tf.get_variable('final_layer_b',batch_dim+weights['final_layer'].b_shape,tf.float32,initializer=tf.zeros_initializer())
 
         return weights
+
+    def NumberOfWeights(self,with_batchnorm:bool=True):
+        return self.weights.NumberOfWeights(with_batchnorm)
