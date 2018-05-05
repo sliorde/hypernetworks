@@ -74,13 +74,13 @@ def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=
                 layer_output = activation_on_last_layer(pre_activations, GiveName(name,'layer{:d}_activations'.format(i)))
                 tf.add_to_collection("activations", layer_output)
         if where_to_batch_norm[i]:
-            layer_output,params = AddBacthNormalizationOps(layer_output,is_training,train_batch_norm,batchnorm_decay,zero_fixer,GiveName(name,'layer{:d}_batchnorm'.format(i)))
+            layer_output,params = AddBatchNormalizationOps(layer_output, is_training, train_batch_norm, batchnorm_decay, zero_fixer, GiveName(name, 'layer{:d}_batchnorm'.format(i)))
             batch_norm_params.append(params)
         layer_outputs.append(layer_output)
     layer_outputs = layer_outputs[1:]
     return layer_outputs,layers,batch_norm_params
 
-def AddBacthNormalizationOps(input, is_training, train_BN_params, batchnorm_decay, zero_fixer=1e-8, name=None):
+def AddBatchNormalizationOps(input, is_training, train_BN_params, batchnorm_decay, zero_fixer=1e-8, name=None):
     """
 
     Args:
