@@ -97,8 +97,8 @@ def AddBatchNormalizationOps(input, is_training, train_BN_params, batchnorm_deca
     batch_means, batch_variances = tf.nn.moments(input, list(np.arange(0, len(input.shape) - 1)),keep_dims=False)
     offsets = tf.get_variable(name=GiveName(name,'offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
     scales = tf.get_variable(name=GiveName(name,'scales'), shape=batch_variances.shape,initializer=tf.ones_initializer(),trainable=train_BN_params)
-    ema_average_batch_means = tf.get_variable(name=GiveName(name,'ema'),shape=batch_means.shape,initializer=tf.zeros_initializer())
-    ema_average_batch_variances = tf.get_variable(name=GiveName(name, 'ema'), shape=batch_variances.shape,initializer=tf.zeros_initializer())
+    ema_average_batch_means = tf.get_variable(name=GiveName(name,'ema_means'),shape=batch_means.shape,initializer=tf.zeros_initializer())
+    ema_average_batch_variances = tf.get_variable(name=GiveName(name, 'ema_variances'), shape=batch_variances.shape,initializer=tf.zeros_initializer())
     ema_batch_means_apply = tf.assign_sub(ema_average_batch_means,(ema_average_batch_means - batch_means) * batchnorm_decay)
     ema_batch_variances_apply = tf.assign_sub(ema_average_batch_variances,(ema_average_batch_variances - batch_variances) * batchnorm_decay)
     def ApplyEmaUpdate():
