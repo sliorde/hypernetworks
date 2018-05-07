@@ -409,5 +409,5 @@ class Hypernetwork():
             tot += count_dict(self.codes_bn)
             tot += count_dict(self.wg_bn)
 
-        return tot
+        return int(tot)
 
