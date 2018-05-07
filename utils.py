@@ -80,8 +80,8 @@ def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=
     layer_outputs = layer_outputs[1:]
     return layer_outputs,layers,batch_norm_params
 
-def ExponentialMovingAverage(x:tf.Tensor,batchnorm_decay,is_training,name=None):
-    ema = tf.get_variable(name=GiveName(name,'ema'), shape=x.shape,initializer=tf.zeros_initializer())
+def ExponentialMovingAverage(x:tf.Tensor,batchnorm_decay,is_training,initializer,name=None):
+    ema = tf.get_variable(name=GiveName(name,'ema'), shape=x.shape,initializer=initializer)
     ema_apply = tf.assign_sub(ema,(ema - x) * batchnorm_decay)
     def ApplyEmaUpdate():
         with tf.control_dependencies([ema_apply]):
@@ -112,11 +112,11 @@ def AddBatchNormalizationOps(input, is_training, train_BN_params, batchnorm_deca
     batch_means, batch_variances = tf.nn.moments(input, list(np.arange(0, len(input.shape) - 1)),keep_dims=False)
     offsets = tf.get_variable(name=GiveName(name,'offsets'),shape=batch_means.shape,initializer=tf.zeros_initializer(),trainable=train_BN_params)
     scales = tf.get_variable(name=GiveName(name,'scales'), shape=batch_variances.shape,initializer=tf.ones_initializer(),trainable=train_BN_params)
-    means = ExponentialMovingAverage(batch_means,batchnorm_decay,is_training,name)
-    variances = ExponentialMovingAverage(batch_variances, batchnorm_decay, is_training, name)
+    means = ExponentialMovingAverage(batch_means,batchnorm_decay,is_training,tf.zeros_initializer(),name)
+    variances = ExponentialMovingAverage(batch_variances, batchnorm_decay, is_training,tf.ones_initializer(), name)
     return tf.nn.batch_normalization(input, means, variances, offsets, scales,zero_fixer,name), (means,variances,offsets,scales)
 
-def GiveName(name:str,more_info:str):
+def GiveName(name:str,more_info:str=None):
     if name is None:
         return None
     elif more_info is None:
