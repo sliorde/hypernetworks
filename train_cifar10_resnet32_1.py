@@ -21,7 +21,7 @@ hparams = HypernetworkHyperParameters()
 np.random.seed(general_params.seed)
 tf.set_random_seed(general_params.seed)
 
-# get training data pipeline. TODO: get also validation data
+# get training data pipeline.
 training_data = Cifar10DataFetcher('TRAIN', batch_size=hparams.batch_size)
 validation_data = Cifar10DataFetcher('VALIDATION', batch_size=hparams.batch_size)
 
