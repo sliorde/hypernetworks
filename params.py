@@ -99,6 +99,7 @@ class HypernetworkHyperParameters():
         self.wg_number_of_hidden_layers = 3 # number of hidden layers for each weight generator
         self.wg_hidden_layer_size_formula = lambda filter_size, number_of_filters: ceil(12 * sqrt(filter_size)) # size of each hidden layer for weight generator
         self.code_size_formula = lambda filter_size,number_of_filters: ceil(log2(filter_size)) # code size at the input the weight generator
+        self.with_residual_connections = False
 
         self.zero_fixer = 1e-8 # add this constant to the argument of sqrt, log, etc. so that the argument is never zero
 

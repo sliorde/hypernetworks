@@ -13,7 +13,7 @@ def GetWeightVariable(shape, name, scale=1.0):
 def GetBiasVariable(shape, name, scale=1.0):
     return tf.get_variable(shape=shape, initializer=tf.constant_initializer(0.0),trainable=False,name=name)
 
-def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=None,train_batch_norm=True,activation_on_last_layer=False,is_training=None,scale=1.0,batchnorm_decay=0.98,activation=tf.nn.relu,name=None,zero_fixer=1e-8):
+def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=None,train_batch_norm=True,with_residual_connections=False, activation_on_last_layer=False,is_training=None,scale=1.0,batchnorm_decay=0.98,activation=tf.nn.relu,name=None,zero_fixer=1e-8):
     """
     Creates a multilayer perceptron (=MLP)
     Args:
@@ -76,6 +76,8 @@ def MultiLayerPerceptron(input,widths,with_batch_norm=False,where_to_batch_norm=
         if where_to_batch_norm[i]:
             layer_output,params = AddBatchNormalizationOps(layer_output, is_training, train_batch_norm, batchnorm_decay, zero_fixer, GiveName(name, 'layer{:d}_batchnorm'.format(i)))
             batch_norm_params.append(params)
+        if (with_residual_connections) and (widths[i] == widths[i-1]):
+            layer_output = layer_output+layer_outputs[i - 1]
         layer_outputs.append(layer_output)
     layer_outputs = layer_outputs[1:]
     return layer_outputs,layers,batch_norm_params

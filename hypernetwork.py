@@ -103,7 +103,7 @@ class Hypernetwork():
             is_training_and_counter_positive = tf.where(tf.greater(step_counter,0), self.is_training,tf.constant(True))
 
         # use this function to construct MLPs for extractor and weight generators
-        mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths,with_batch_norm=self.hnet_hparams.with_batchnorm,scale=np.square(self.hnet_hparams.initialization_std),batchnorm_decay=self.hnet_hparams.batchnorm_decay,is_training=is_training_and_counter_positive,name=name,zero_fixer=self.hnet_hparams.zero_fixer)
+        mlp_builder = lambda input, widths,name=None: MultiLayerPerceptron(input, widths, with_batch_norm=self.hnet_hparams.with_batchnorm, scale=np.square(self.hnet_hparams.initialization_std), batchnorm_decay=self.hnet_hparams.batchnorm_decay, with_residual_connections=self.hnet_hparams.with_residual_connections, is_training=is_training_and_counter_positive, name=name, zero_fixer=self.hnet_hparams.zero_fixer)
 
         # extractor
         with tf.device(next(self.gpus)):
