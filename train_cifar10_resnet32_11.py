@@ -24,9 +24,8 @@ image_params = Cifar10Params()
 
 # override
 hparams.initialization_std = 1e-3
-hparams.learning_rate = 4e-7
+hparams.learning_rate = 1e-8
 hparams.learning_rate_rate = 0.99999
-hparams.lamBda = 1e8
 hparams.create_optimizer = lambda learning_rate, hnet_hparams: tf.train.AdamOptimizer(learning_rate)
 hparams.with_residual_connections = True
 
@@ -56,4 +55,4 @@ with tf.Session(config=config).as_default() as sess:
     writer = tf.summary.FileWriter(output_dir, hnet.graph)
 
     # train
-    hnet.Train(sess, validation_data.image, validation_data.label, max_steps=1e6, logger=logger, writer=writer, checkpoint_file_name=output_dir, log_interval=1)
+    hnet.Train(sess, validation_data.image, validation_data.label, max_steps=1e6, logger=logger, writer=writer, checkpoint_file_name=output_dir, log_interval=100)

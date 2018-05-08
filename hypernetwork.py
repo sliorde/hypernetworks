@@ -295,7 +295,7 @@ class Hypernetwork():
             if i % log_interval == 0:
                 t_elapsed = (time() - t) / log_interval
                 i, accuracy, accuracy_loss, diversity_loss, total_loss, summary = self.TrainStep(sess,[self.accuracy,self.accuracy_loss,self.diversity_loss,self.loss,self.summary_op])
-                logger.info('step {:d}: lr={:.8f} time={:.4f}'.format(i, self.get_learning_rate(), t_elapsed))
+                logger.info('step {:d}: lr={:.12f} time={:.4f}'.format(i, self.get_learning_rate(), t_elapsed))
                 logger.info('      (accuracy_loss, diversity_loss, total_loss): ({:.7f}, {:.7f}, {:.7f})'.format(accuracy_loss, diversity_loss, total_loss))
                 self.UpdateStuff(sess,update_dict,logger)
                 writer.add_summary(summary, i)
