@@ -1,4 +1,5 @@
 from math import ceil,sqrt,log2
+import tensorflow as tf
 
 class GeneralParameters():
     def __init__(self):
@@ -110,3 +111,7 @@ class HypernetworkHyperParameters():
         self.learning_rate_rate = 0.99998  # decay rate of learning rate - decay happens once every training step
         self.momentum = 0.9
         self.lamBda = 1e3  #  lambda value (=coefficient of accuracy component in total loss)
+
+        self.validation = False
+
+        self.create_optimizer = lambda learning_rate, hnet_hparams: tf.train.MomentumOptimizer(learning_rate, hnet_hparams.momentum)

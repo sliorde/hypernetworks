@@ -180,7 +180,9 @@ class Hypernetwork():
 
             diversity_loss = tf.identity(- 1 * entropy_estimate, name='diversity_loss')
 
-            loss = tf.identity(self.hnet_hparams.lamBda * accuracy_loss + diversity_loss, name='loss')
+            # TODO
+            #loss = tf.identity(self.hnet_hparams.lamBda * accuracy_loss + diversity_loss, name='loss')
+            loss = tf.identity(accuracy_loss, name='loss')
 
             self.flattened_network = flattened_network
             self.target = target
@@ -199,8 +201,7 @@ class Hypernetwork():
         update_learning_rate = tf.assign(learning_rate, learning_rate * learning_rate_rate,name='update_learning_rate')
         steps_before_train_step = [update_learning_rate]
 
-        #optimizer = tf.train.MomentumOptimizer(learning_rate,self.hnet_hparams.momentum) # TODO
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        optimizer = self.hnet_hparams.create_optimizer(learning_rate, self.hnet_hparams)
         with tf.control_dependencies(steps_before_train_step):
             train_step = optimizer.minimize(self.loss, name='train_step',colocate_gradients_with_ops=True)
             with tf.control_dependencies([train_step]):
@@ -258,10 +259,11 @@ class Hypernetwork():
             i = self.Restore(sess,checkpoint_file_name,logger,restore_message)
         else:
             i = self.Initialize(sess)
-        validation_hnet = Hypernetwork(x_validation, y_validation, 'EVAL', self.general_params, self.hnet_hparams, self.target_hparams, self.image_params, self.devices, self.graph)
-        sess.run(tf.variables_initializer([validation_hnet.is_training,validation_hnet.step_counter]))
-        while i<=max_steps:
-            if (i % 1000 == 0):
+        if self.hnet_hparams.validation:
+            validation_hnet = Hypernetwork(x_validation, y_validation, 'EVAL', self.general_params, self.hnet_hparams, self.target_hparams, self.image_params, self.devices, self.graph)
+            sess.run(tf.variables_initializer([validation_hnet.is_training,validation_hnet.step_counter]))
+        while i <= max_steps:
+            if self.hnet_hparams.validation and (i % 1000 == 0):
                 weights = []
                 accuracy = []
                 accuracy_loss = []
