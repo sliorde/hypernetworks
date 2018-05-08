@@ -239,7 +239,7 @@ class Hypernetwork():
     def TrainStep(self,sess:tf.Session,additional_tensors_to_run=[]):
         z = self.SampleInput(self.hnet_hparams.batch_size)
         tensors_to_run = [self.train_step,self.step_counter]+additional_tensors_to_run
-        out = sess.run(tensors_to_run,feed_dict={self.z:z})
+        out = sess.run(tensors_to_run,feed_dict={self.z:z, self.is_training: True})
         out.pop(0)
         if len(out) == 1:
             return out[0]
