@@ -23,13 +23,13 @@ target_hparams = ResNetCifar10HyperParameters()
 image_params = Cifar10Params()
 
 # override
-hparams.initialization_std = 1e-3
-hparams.learning_rate = 1e-8
+hparams.initialization_std = 1e-2
+hparams.learning_rate = 1e-10
 hparams.learning_rate_rate = 0.99999
 hparams.create_optimizer = lambda learning_rate, hnet_hparams: tf.train.AdamOptimizer(learning_rate)
-hparams.with_residual_connections = True
+hparams.with_residual_connections = False
 
-target_hparams.batch_type = 'BATCH_TYPE5'
+target_hparams.batch_type = 'BATCH_TYPE1'
 
 # set random seeds
 np.random.seed(general_params.seed)
